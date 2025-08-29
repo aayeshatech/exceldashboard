@@ -5,397 +5,592 @@ import plotly.express as px
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 import warnings
+import time
+from datetime import datetime, timedelta
 warnings.filterwarnings('ignore')
 
 # Set page config
 st.set_page_config(
-    page_title="NSE Trading Dashboard",
-    page_icon="📈",
+    page_title="NSE Options Chain Dashboard",
+    page_icon="⚡",
     layout="wide",
     initial_sidebar_state="expanded"
 )
 
-# Custom CSS for better styling
+# Custom CSS for styling
 st.markdown("""
 <style>
     .main-header {
         font-size: 2.5rem;
         font-weight: bold;
         text-align: center;
+        color: #FF6B35;
+        margin-bottom: 1rem;
+        text-shadow: 2px 2px 4px rgba(0,0,0,0.1);
+    }
+    .sub-header {
+        font-size: 1.5rem;
+        font-weight: bold;
         color: #1f77b4;
-        margin-bottom: 2rem;
+        margin-bottom: 1rem;
     }
     .metric-card {
-        background-color: #f0f2f6;
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
         padding: 1rem;
         border-radius: 10px;
-        border-left: 5px solid #1f77b4;
+        color: white;
+        text-align: center;
+    }
+    .option-card {
+        background-color: #f8f9fa;
+        border: 2px solid #e9ecef;
+        border-radius: 8px;
+        padding: 1rem;
+        margin: 0.5rem 0;
+    }
+    .call-option {
+        border-left: 5px solid #28a745;
+    }
+    .put-option {
+        border-left: 5px solid #dc3545;
     }
     .stSelectbox > div > div > div {
         background-color: #f0f2f6;
     }
+    .highlight-positive {
+        color: #28a745;
+        font-weight: bold;
+    }
+    .highlight-negative {
+        color: #dc3545;
+        font-weight: bold;
+    }
 </style>
 """, unsafe_allow_html=True)
 
-@st.cache_data(ttl=60)  # Cache for 1 minute to allow for live updates
-def load_excel_data(file_path, sheet_names=None):
-    """Load data from Excel file with multiple sheets"""
+@st.cache_data(ttl=30)  # Cache for 30 seconds for real-time updates
+def load_options_data(file_path):
+    """Load options chain data from Excel file"""
     try:
-        if sheet_names is None:
-            # Get all sheet names
-            excel_file = pd.ExcelFile(file_path)
-            sheet_names = excel_file.sheet_names
-        
+        # Load all sheets
+        excel_file = pd.ExcelFile(file_path)
         data_dict = {}
-        for sheet in sheet_names:
-            df = pd.read_excel(file_path, sheet_name=sheet)
-            data_dict[sheet] = df
-            
-        return data_dict, sheet_names
+        
+        for sheet_name in excel_file.sheet_names:
+            try:
+                df = pd.read_excel(file_path, sheet_name=sheet_name)
+                data_dict[sheet_name] = df
+            except:
+                continue
+                
+        return data_dict
     except Exception as e:
         st.error(f"Error loading Excel file: {str(e)}")
-        return {}, []
+        return {}
 
-def calculate_technical_indicators(df, price_col='Close'):
-    """Calculate basic technical indicators"""
-    if price_col not in df.columns:
-        return df
+def calculate_option_metrics(df):
+    """Calculate key options metrics"""
+    metrics = {}
     
-    df = df.copy()
+    if 'CE_OI' in df.columns and 'PE_OI' in df.columns:
+        # Total Call and Put OI
+        metrics['total_call_oi'] = df['CE_OI'].sum()
+        metrics['total_put_oi'] = df['PE_OI'].sum()
+        metrics['pcr_oi'] = metrics['total_put_oi'] / metrics['total_call_oi'] if metrics['total_call_oi'] > 0 else 0
     
-    # Moving Averages
-    if len(df) >= 20:
-        df['MA_20'] = df[price_col].rolling(window=20).mean()
-    if len(df) >= 50:
-        df['MA_50'] = df[price_col].rolling(window=50).mean()
+    if 'CE_Total_Traded_Volume' in df.columns and 'PE_Total_Traded_Volume' in df.columns:
+        # Total Call and Put Volume
+        metrics['total_call_volume'] = df['CE_Total_Traded_Volume'].sum()
+        metrics['total_put_volume'] = df['PE_Total_Traded_Volume'].sum()
+        metrics['pcr_volume'] = metrics['total_put_volume'] / metrics['total_call_volume'] if metrics['total_call_volume'] > 0 else 0
     
-    # RSI calculation
-    if len(df) >= 14:
-        delta = df[price_col].diff()
-        gain = (delta.where(delta > 0, 0)).rolling(window=14).mean()
-        loss = (-delta.where(delta < 0, 0)).rolling(window=14).mean()
-        rs = gain / loss
-        df['RSI'] = 100 - (100 / (1 + rs))
+    # Max Pain calculation
+    if all(col in df.columns for col in ['Strike', 'CE_OI', 'PE_OI']):
+        max_pain = calculate_max_pain(df)
+        metrics['max_pain'] = max_pain
     
-    # Volume moving average
-    if 'Volume' in df.columns and len(df) >= 20:
-        df['Volume_MA'] = df['Volume'].rolling(window=20).mean()
-    
-    return df
+    return metrics
 
-def create_candlestick_chart(df, symbol):
-    """Create candlestick chart with technical indicators"""
-    fig = make_subplots(
-        rows=3, cols=1,
-        shared_xaxis=True,
-        vertical_spacing=0.1,
-        row_heights=[0.6, 0.2, 0.2],
-        subplot_titles=[f'{symbol} - Price Chart', 'Volume', 'RSI']
-    )
-    
-    # Candlestick chart
-    if all(col in df.columns for col in ['Open', 'High', 'Low', 'Close']):
-        fig.add_trace(
-            go.Candlestick(
-                x=df.index,
-                open=df['Open'],
-                high=df['High'],
-                low=df['Low'],
-                close=df['Close'],
-                name='OHLC'
-            ),
-            row=1, col=1
-        )
+def calculate_max_pain(df):
+    """Calculate Max Pain strike price"""
+    try:
+        strikes = df['Strike'].dropna().sort_values()
+        total_pain = []
         
-        # Add moving averages if available
-        if 'MA_20' in df.columns:
-            fig.add_trace(
-                go.Scatter(x=df.index, y=df['MA_20'], name='MA 20', line=dict(color='orange')),
-                row=1, col=1
-            )
-        if 'MA_50' in df.columns:
-            fig.add_trace(
-                go.Scatter(x=df.index, y=df['MA_50'], name='MA 50', line=dict(color='red')),
-                row=1, col=1
-            )
-    
-    # Volume chart
-    if 'Volume' in df.columns:
-        colors = ['red' if close < open else 'green' 
-                 for close, open in zip(df.get('Close', []), df.get('Open', []))]
+        for strike in strikes:
+            call_pain = df[df['Strike'] < strike]['CE_OI'].sum() * (strike - df[df['Strike'] < strike]['Strike']).sum()
+            put_pain = df[df['Strike'] > strike]['PE_OI'].sum() * (df[df['Strike'] > strike]['Strike'] - strike).sum()
+            total_pain.append(call_pain + put_pain)
         
-        fig.add_trace(
-            go.Bar(x=df.index, y=df['Volume'], name='Volume', marker_color=colors),
-            row=2, col=1
-        )
-        
-        if 'Volume_MA' in df.columns:
-            fig.add_trace(
-                go.Scatter(x=df.index, y=df['Volume_MA'], name='Volume MA', line=dict(color='blue')),
-                row=2, col=1
-            )
+        max_pain_strike = strikes.iloc[np.argmin(total_pain)]
+        return max_pain_strike
+    except:
+        return None
+
+def create_oi_chart(df, symbol):
+    """Create Open Interest chart"""
+    fig = go.Figure()
     
-    # RSI chart
-    if 'RSI' in df.columns:
-        fig.add_trace(
-            go.Scatter(x=df.index, y=df['RSI'], name='RSI', line=dict(color='purple')),
-            row=3, col=1
-        )
-        fig.add_hline(y=70, line_dash="dash", line_color="red", row=3, col=1)
-        fig.add_hline(y=30, line_dash="dash", line_color="green", row=3, col=1)
+    if all(col in df.columns for col in ['Strike', 'CE_OI', 'PE_OI']):
+        # Call OI
+        fig.add_trace(go.Bar(
+            x=df['Strike'],
+            y=df['CE_OI'],
+            name='Call OI',
+            marker_color='green',
+            opacity=0.7,
+            yaxis='y'
+        ))
+        
+        # Put OI (negative for visual effect)
+        fig.add_trace(go.Bar(
+            x=df['Strike'],
+            y=-df['PE_OI'],
+            name='Put OI',
+            marker_color='red',
+            opacity=0.7,
+            yaxis='y'
+        ))
     
     fig.update_layout(
-        title=f'{symbol} Trading Chart',
-        xaxis_rangeslider_visible=False,
-        height=800
+        title=f'{symbol} - Open Interest Distribution',
+        xaxis_title='Strike Price',
+        yaxis_title='Open Interest',
+        hovermode='x unified',
+        height=500,
+        barmode='relative'
     )
     
     return fig
 
-def apply_filters(df, filters):
-    """Apply various filters to the dataframe"""
-    filtered_df = df.copy()
+def create_volume_chart(df, symbol):
+    """Create Volume chart"""
+    fig = go.Figure()
     
-    # Price range filter
-    if filters.get('price_min') is not None and 'Close' in df.columns:
-        filtered_df = filtered_df[filtered_df['Close'] >= filters['price_min']]
-    if filters.get('price_max') is not None and 'Close' in df.columns:
-        filtered_df = filtered_df[filtered_df['Close'] <= filters['price_max']]
+    if all(col in df.columns for col in ['Strike', 'CE_Total_Traded_Volume', 'PE_Total_Traded_Volume']):
+        # Call Volume
+        fig.add_trace(go.Bar(
+            x=df['Strike'],
+            y=df['CE_Total_Traded_Volume'],
+            name='Call Volume',
+            marker_color='lightgreen',
+            opacity=0.7
+        ))
+        
+        # Put Volume (negative for visual effect)
+        fig.add_trace(go.Bar(
+            x=df['Strike'],
+            y=-df['PE_Total_Traded_Volume'],
+            name='Put Volume',
+            marker_color='lightcoral',
+            opacity=0.7
+        ))
     
-    # Volume filter
-    if filters.get('volume_min') is not None and 'Volume' in df.columns:
-        filtered_df = filtered_df[filtered_df['Volume'] >= filters['volume_min']]
+    fig.update_layout(
+        title=f'{symbol} - Volume Distribution',
+        xaxis_title='Strike Price',
+        yaxis_title='Volume',
+        hovermode='x unified',
+        height=500,
+        barmode='relative'
+    )
     
-    # RSI filter
-    if filters.get('rsi_min') is not None and 'RSI' in df.columns:
-        filtered_df = filtered_df[filtered_df['RSI'] >= filters['rsi_min']]
-    if filters.get('rsi_max') is not None and 'RSI' in df.columns:
-        filtered_df = filtered_df[filtered_df['RSI'] <= filters['rsi_max']]
+    return fig
+
+def create_iv_chart(df, symbol):
+    """Create Implied Volatility chart"""
+    fig = go.Figure()
     
-    return filtered_df
+    if all(col in df.columns for col in ['Strike', 'CE_IV(Spot)', 'PE_IV(Spot)']):
+        # Call IV
+        fig.add_trace(go.Scatter(
+            x=df['Strike'],
+            y=df['CE_IV(Spot)'],
+            mode='lines+markers',
+            name='Call IV',
+            line=dict(color='green', width=2),
+            marker=dict(size=6)
+        ))
+        
+        # Put IV
+        fig.add_trace(go.Scatter(
+            x=df['Strike'],
+            y=df['PE_IV(Spot)'],
+            mode='lines+markers',
+            name='Put IV',
+            line=dict(color='red', width=2),
+            marker=dict(size=6)
+        ))
+    
+    fig.update_layout(
+        title=f'{symbol} - Implied Volatility Smile',
+        xaxis_title='Strike Price',
+        yaxis_title='Implied Volatility',
+        hovermode='x unified',
+        height=500
+    )
+    
+    return fig
+
+def create_greeks_chart(df, symbol, greek='Delta'):
+    """Create Greeks chart"""
+    fig = go.Figure()
+    
+    call_greek = f'CE_{greek}(Spot)'
+    put_greek = f'PE_{greek}(Spot)'
+    
+    if all(col in df.columns for col in ['Strike', call_greek, put_greek]):
+        # Call Greek
+        fig.add_trace(go.Scatter(
+            x=df['Strike'],
+            y=df[call_greek],
+            mode='lines+markers',
+            name=f'Call {greek}',
+            line=dict(color='green', width=2)
+        ))
+        
+        # Put Greek
+        fig.add_trace(go.Scatter(
+            x=df['Strike'],
+            y=df[put_greek],
+            mode='lines+markers',
+            name=f'Put {greek}',
+            line=dict(color='red', width=2)
+        ))
+    
+    fig.update_layout(
+        title=f'{symbol} - {greek} Distribution',
+        xaxis_title='Strike Price',
+        yaxis_title=greek,
+        hovermode='x unified',
+        height=400
+    )
+    
+    return fig
+
+def display_option_chain_table(df, symbol):
+    """Display formatted option chain table"""
+    st.subheader(f"📊 {symbol} Options Chain")
+    
+    if df.empty:
+        st.warning("No data available for this symbol")
+        return
+    
+    # Select key columns for display
+    display_columns = []
+    
+    # Call options columns
+    call_cols = ['CE_OI', 'CE_OI_Change', 'CE_Total_Traded_Volume', 'CE_LTP', 'CE_LTP_Change', 'CE_IV(Spot)']
+    # Put options columns  
+    put_cols = ['PE_OI', 'PE_OI_Change', 'PE_Total_Traded_Volume', 'PE_LTP', 'PE_LTP_Change', 'PE_IV(Spot)']
+    
+    # Build display dataframe
+    display_df = pd.DataFrame()
+    
+    if 'Strike' in df.columns:
+        display_df['Strike'] = df['Strike']
+    
+    # Add available call columns
+    for col in call_cols:
+        if col in df.columns:
+            display_df[col.replace('CE_', 'C_')] = df[col]
+    
+    # Add available put columns
+    for col in put_cols:
+        if col in df.columns:
+            display_df[col.replace('PE_', 'P_')] = df[col]
+    
+    # Format the dataframe for better display
+    numeric_cols = display_df.select_dtypes(include=[np.number]).columns
+    display_df[numeric_cols] = display_df[numeric_cols].round(2)
+    
+    # Color coding for changes
+    def highlight_changes(val):
+        try:
+            if 'Change' in str(val):
+                if val > 0:
+                    return 'background-color: lightgreen'
+                elif val < 0:
+                    return 'background-color: lightcoral'
+        except:
+            pass
+        return ''
+    
+    styled_df = display_df.style.applymap(highlight_changes)
+    st.dataframe(styled_df, use_container_width=True, height=600)
 
 def main():
-    st.markdown('<h1 class="main-header">📈 NSE Live Trading Dashboard</h1>', unsafe_allow_html=True)
+    st.markdown('<h1 class="main-header">⚡ Live NSE Options Chain Dashboard</h1>', unsafe_allow_html=True)
     
-    # Sidebar for file upload and controls
-    st.sidebar.header("📁 Data Source")
+    # Sidebar configuration
+    st.sidebar.header("⚙️ Dashboard Configuration")
     
     # File uploader
     uploaded_file = st.sidebar.file_uploader(
-        "Upload Excel file with NSE data",
-        type=['xlsx', 'xls'],
-        help="Upload your Excel file containing live NSE data"
+        "Upload Options Chain Excel File",
+        type=['xlsx', 'xlsm'],
+        help="Upload your Live_Option_Chain_Terminal.xlsm file"
     )
     
     if uploaded_file is not None:
         # Load data
-        data_dict, sheet_names = load_excel_data(uploaded_file)
+        data_dict = load_options_data(uploaded_file)
         
         if data_dict:
-            # Sheet selection
-            st.sidebar.header("📊 Sheet Selection")
-            selected_sheets = st.sidebar.multiselect(
-                "Select sheets to analyze",
-                sheet_names,
-                default=sheet_names[:3] if len(sheet_names) >= 3 else sheet_names
-            )
+            # Auto refresh settings
+            st.sidebar.header("🔄 Auto Refresh")
+            auto_refresh = st.sidebar.checkbox("Enable Auto Refresh", value=True)
+            refresh_interval = st.sidebar.slider("Refresh Interval (seconds)", 5, 60, 15)
             
-            # Filters
-            st.sidebar.header("🔍 Filters")
-            
-            # Auto-refresh
-            auto_refresh = st.sidebar.checkbox("Auto-refresh (60 seconds)", value=False)
             if auto_refresh:
+                st.sidebar.info(f"Auto refreshing every {refresh_interval} seconds")
+                time.sleep(refresh_interval)
                 st.rerun()
             
-            # Price filters
-            price_filter = st.sidebar.expander("Price Filters")
-            with price_filter:
-                price_min = st.number_input("Minimum Price", min_value=0.0, value=0.0)
-                price_max = st.number_input("Maximum Price", min_value=0.0, value=10000.0)
+            # Symbol selection
+            st.sidebar.header("📈 Symbol Selection")
             
-            # Volume filter
-            volume_filter = st.sidebar.expander("Volume Filters")
-            with volume_filter:
-                volume_min = st.number_input("Minimum Volume", min_value=0, value=0)
+            # Get available option chains
+            option_sheets = [sheet for sheet in data_dict.keys() if 'OC_' in sheet or 'Option' in sheet]
             
-            # RSI filter
-            rsi_filter = st.sidebar.expander("RSI Filters")
-            with rsi_filter:
-                rsi_min = st.number_input("RSI Minimum", min_value=0.0, max_value=100.0, value=0.0)
-                rsi_max = st.number_input("RSI Maximum", min_value=0.0, max_value=100.0, value=100.0)
-            
-            filters = {
-                'price_min': price_min if price_min > 0 else None,
-                'price_max': price_max if price_max < 10000 else None,
-                'volume_min': volume_min if volume_min > 0 else None,
-                'rsi_min': rsi_min if rsi_min > 0 else None,
-                'rsi_max': rsi_max if rsi_max < 100 else None,
-            }
-            
-            # Main dashboard
-            if selected_sheets:
-                # Create tabs for different views
-                tab1, tab2, tab3, tab4 = st.tabs(["📊 Overview", "📈 Charts", "📋 Data Tables", "🔍 Screener"])
+            if option_sheets:
+                selected_sheet = st.sidebar.selectbox("Select Options Chain", option_sheets)
                 
-                with tab1:
-                    st.header("Market Overview")
+                if selected_sheet in data_dict:
+                    df = data_dict[selected_sheet].copy()
                     
-                    # Summary metrics
-                    col1, col2, col3, col4 = st.columns(4)
+                    # Get symbol from the data
+                    symbol = "OPTIONS"
+                    if 'FNO Symbol' in df.columns:
+                        symbol = df['FNO Symbol'].iloc[0] if len(df) > 0 else "OPTIONS"
                     
-                    total_stocks = sum(len(data_dict[sheet]) for sheet in selected_sheets)
+                    # Main dashboard layout
+                    st.markdown(f'<h2 class="sub-header">📊 {symbol} Options Analysis</h2>', unsafe_allow_html=True)
+                    
+                    # Calculate metrics
+                    metrics = calculate_option_metrics(df)
+                    
+                    # Display key metrics
+                    col1, col2, col3, col4, col5 = st.columns(5)
+                    
                     with col1:
-                        st.metric("Total Stocks", total_stocks)
+                        if 'total_call_oi' in metrics:
+                            st.metric(
+                                "Total Call OI",
+                                f"{metrics['total_call_oi']:,.0f}",
+                                delta=None
+                            )
                     
-                    # Calculate aggregate metrics
-                    all_data = pd.concat([data_dict[sheet] for sheet in selected_sheets], ignore_index=True)
+                    with col2:
+                        if 'total_put_oi' in metrics:
+                            st.metric(
+                                "Total Put OI", 
+                                f"{metrics['total_put_oi']:,.0f}",
+                                delta=None
+                            )
                     
-                    if 'Close' in all_data.columns:
-                        avg_price = all_data['Close'].mean()
-                        with col2:
-                            st.metric("Average Price", f"₹{avg_price:.2f}")
-                    
-                    if 'Volume' in all_data.columns:
-                        total_volume = all_data['Volume'].sum()
-                        with col3:
-                            st.metric("Total Volume", f"{total_volume:,.0f}")
+                    with col3:
+                        if 'pcr_oi' in metrics:
+                            pcr_color = "normal"
+                            if metrics['pcr_oi'] > 1.2:
+                                pcr_color = "inverse"
+                            elif metrics['pcr_oi'] < 0.8:
+                                pcr_color = "inverse"
+                            
+                            st.metric(
+                                "PCR (OI)",
+                                f"{metrics['pcr_oi']:.3f}",
+                                delta=None
+                            )
                     
                     with col4:
-                        st.metric("Active Sheets", len(selected_sheets))
+                        if 'pcr_volume' in metrics:
+                            st.metric(
+                                "PCR (Volume)",
+                                f"{metrics['pcr_volume']:.3f}",
+                                delta=None
+                            )
                     
-                    # Top gainers/losers (if Change% column exists)
-                    if 'Change%' in all_data.columns or any('change' in col.lower() for col in all_data.columns):
-                        col1, col2 = st.columns(2)
+                    with col5:
+                        if 'max_pain' in metrics and metrics['max_pain']:
+                            st.metric(
+                                "Max Pain",
+                                f"₹{metrics['max_pain']:.0f}",
+                                delta=None
+                            )
+                    
+                    # Create tabs for different views
+                    tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs([
+                        "📊 Option Chain", 
+                        "📈 Open Interest", 
+                        "📊 Volume", 
+                        "📈 IV Smile", 
+                        "🔢 Greeks",
+                        "💹 Analysis"
+                    ])
+                    
+                    with tab1:
+                        display_option_chain_table(df, symbol)
                         
-                        change_col = next((col for col in all_data.columns if 'change' in col.lower()), None)
-                        if change_col:
+                        # Download option
+                        csv = df.to_csv(index=False)
+                        st.download_button(
+                            label="📥 Download Options Data as CSV",
+                            data=csv,
+                            file_name=f"{symbol}_options_chain.csv",
+                            mime="text/csv"
+                        )
+                    
+                    with tab2:
+                        fig_oi = create_oi_chart(df, symbol)
+                        st.plotly_chart(fig_oi, use_container_width=True)
+                        
+                        # OI Analysis
+                        if 'CE_OI' in df.columns and 'PE_OI' in df.columns:
+                            st.subheader("📊 OI Analysis")
+                            
+                            col1, col2 = st.columns(2)
                             with col1:
-                                st.subheader("🟢 Top Gainers")
-                                top_gainers = all_data.nlargest(5, change_col)
-                                st.dataframe(top_gainers[['Symbol', change_col] if 'Symbol' in all_data.columns else top_gainers[[change_col]]])
+                                st.write("**Top 5 Call OI Strikes:**")
+                                top_call_oi = df.nlargest(5, 'CE_OI')[['Strike', 'CE_OI']]
+                                st.dataframe(top_call_oi, hide_index=True)
                             
                             with col2:
-                                st.subheader("🔴 Top Losers")
-                                top_losers = all_data.nsmallest(5, change_col)
-                                st.dataframe(top_losers[['Symbol', change_col] if 'Symbol' in all_data.columns else top_losers[[change_col]]])
-                
-                with tab2:
-                    st.header("Trading Charts")
+                                st.write("**Top 5 Put OI Strikes:**")
+                                top_put_oi = df.nlargest(5, 'PE_OI')[['Strike', 'PE_OI']]
+                                st.dataframe(top_put_oi, hide_index=True)
                     
-                    # Chart selection
-                    chart_sheet = st.selectbox("Select sheet for charting", selected_sheets)
+                    with tab3:
+                        fig_vol = create_volume_chart(df, symbol)
+                        st.plotly_chart(fig_vol, use_container_width=True)
+                        
+                        # Volume Analysis
+                        if all(col in df.columns for col in ['CE_Total_Traded_Volume', 'PE_Total_Traded_Volume']):
+                            st.subheader("📊 Volume Analysis")
+                            
+                            col1, col2 = st.columns(2)
+                            with col1:
+                                st.write("**Top 5 Call Volume Strikes:**")
+                                top_call_vol = df.nlargest(5, 'CE_Total_Traded_Volume')[['Strike', 'CE_Total_Traded_Volume']]
+                                st.dataframe(top_call_vol, hide_index=True)
+                            
+                            with col2:
+                                st.write("**Top 5 Put Volume Strikes:**")
+                                top_put_vol = df.nlargest(5, 'PE_Total_Traded_Volume')[['Strike', 'PE_Total_Traded_Volume']]
+                                st.dataframe(top_put_vol, hide_index=True)
                     
-                    if chart_sheet in data_dict:
-                        df = data_dict[chart_sheet].copy()
+                    with tab4:
+                        fig_iv = create_iv_chart(df, symbol)
+                        st.plotly_chart(fig_iv, use_container_width=True)
                         
-                        # Add technical indicators
-                        df = calculate_technical_indicators(df)
-                        
-                        # Symbol selection if Symbol column exists
-                        if 'Symbol' in df.columns:
-                            symbols = df['Symbol'].unique()
-                            selected_symbol = st.selectbox("Select Symbol", symbols)
-                            symbol_data = df[df['Symbol'] == selected_symbol].copy()
+                        # IV Statistics
+                        if all(col in df.columns for col in ['CE_IV(Spot)', 'PE_IV(Spot)']):
+                            st.subheader("📊 IV Statistics")
                             
-                            if not symbol_data.empty:
-                                # Create and display chart
-                                fig = create_candlestick_chart(symbol_data, selected_symbol)
-                                st.plotly_chart(fig, use_container_width=True)
-                        else:
-                            # If no Symbol column, use the whole dataset
-                            fig = create_candlestick_chart(df, chart_sheet)
-                            st.plotly_chart(fig, use_container_width=True)
-                
-                with tab3:
-                    st.header("Data Tables")
+                            col1, col2 = st.columns(2)
+                            with col1:
+                                st.write("**Call IV Stats:**")
+                                call_iv_stats = df['CE_IV(Spot)'].describe()
+                                st.dataframe(call_iv_stats.to_frame('Call IV'), use_container_width=True)
+                            
+                            with col2:
+                                st.write("**Put IV Stats:**")
+                                put_iv_stats = df['PE_IV(Spot)'].describe()
+                                st.dataframe(put_iv_stats.to_frame('Put IV'), use_container_width=True)
                     
-                    for sheet in selected_sheets:
-                        with st.expander(f"📋 {sheet} Data", expanded=True):
-                            df = data_dict[sheet].copy()
+                    with tab5:
+                        # Greeks selection
+                        greek_options = ['Delta', 'Theta', 'Vega', 'Gamma', 'Rho']
+                        selected_greek = st.selectbox("Select Greek to Display", greek_options)
+                        
+                        fig_greek = create_greeks_chart(df, symbol, selected_greek)
+                        st.plotly_chart(fig_greek, use_container_width=True)
+                        
+                        # Greeks summary
+                        greek_cols = [f'CE_{selected_greek}(Spot)', f'PE_{selected_greek}(Spot)']
+                        if all(col in df.columns for col in greek_cols):
+                            st.subheader(f"📊 {selected_greek} Summary")
                             
-                            # Add technical indicators
-                            df = calculate_technical_indicators(df)
-                            
-                            # Apply filters
-                            filtered_df = apply_filters(df, filters)
-                            
-                            st.write(f"Showing {len(filtered_df)} of {len(df)} records")
-                            st.dataframe(filtered_df, use_container_width=True)
-                            
-                            # Download button
-                            csv = filtered_df.to_csv(index=False)
-                            st.download_button(
-                                label=f"Download {sheet} data as CSV",
-                                data=csv,
-                                file_name=f"{sheet}_filtered_data.csv",
-                                mime="text/csv"
-                            )
-                
-                with tab4:
-                    st.header("Stock Screener")
+                            col1, col2 = st.columns(2)
+                            with col1:
+                                st.metric(f"Avg Call {selected_greek}", f"{df[greek_cols[0]].mean():.4f}")
+                            with col2:
+                                st.metric(f"Avg Put {selected_greek}", f"{df[greek_cols[1]].mean():.4f}")
                     
-                    # Combine all data for screening
-                    all_data = pd.concat([data_dict[sheet] for sheet in selected_sheets], ignore_index=True)
-                    
-                    if not all_data.empty:
-                        # Add technical indicators
-                        all_data = calculate_technical_indicators(all_data)
+                    with tab6:
+                        st.subheader("💹 Market Analysis")
                         
-                        # Apply filters
-                        screened_data = apply_filters(all_data, filters)
-                        
-                        st.write(f"Found {len(screened_data)} stocks matching criteria")
-                        
-                        if not screened_data.empty:
-                            # Display screened results
-                            st.dataframe(screened_data, use_container_width=True)
+                        # Support and Resistance levels based on OI
+                        if all(col in df.columns for col in ['Strike', 'CE_OI', 'PE_OI']):
+                            # Calculate support and resistance
+                            max_put_oi_strike = df.loc[df['PE_OI'].idxmax(), 'Strike']
+                            max_call_oi_strike = df.loc[df['CE_OI'].idxmax(), 'Strike']
                             
-                            # Visualization of screened data
-                            if 'Close' in screened_data.columns and 'Volume' in screened_data.columns:
-                                fig = px.scatter(
-                                    screened_data, 
-                                    x='Close', 
-                                    y='Volume',
-                                    title="Price vs Volume - Screened Stocks",
-                                    hover_data=['Symbol'] if 'Symbol' in screened_data.columns else None
-                                )
-                                st.plotly_chart(fig, use_container_width=True)
+                            col1, col2, col3 = st.columns(3)
+                            
+                            with col1:
+                                st.metric("🔴 Resistance (Max Call OI)", f"₹{max_call_oi_strike:.0f}")
+                            
+                            with col2:
+                                st.metric("🟢 Support (Max Put OI)", f"₹{max_put_oi_strike:.0f}")
+                            
+                            with col3:
+                                if 'max_pain' in metrics and metrics['max_pain']:
+                                    st.metric("⚖️ Max Pain", f"₹{metrics['max_pain']:.0f}")
+                        
+                        # Market sentiment
+                        st.subheader("📊 Market Sentiment")
+                        
+                        if 'pcr_oi' in metrics:
+                            pcr = metrics['pcr_oi']
+                            if pcr > 1.3:
+                                sentiment = "🐻 Bearish (High PCR)"
+                                sentiment_color = "red"
+                            elif pcr < 0.7:
+                                sentiment = "🐂 Bullish (Low PCR)"
+                                sentiment_color = "green"
+                            else:
+                                sentiment = "⚖️ Neutral"
+                                sentiment_color = "orange"
+                            
+                            st.markdown(f'<p style="color: {sentiment_color}; font-size: 1.2em; font-weight: bold;">{sentiment}</p>', unsafe_allow_html=True)
+                            
+                        # Additional sheets analysis
+                        st.subheader("📋 Additional Data Sheets")
+                        
+                        other_sheets = [sheet for sheet in data_dict.keys() if sheet not in option_sheets]
+                        selected_additional = st.selectbox("Select Additional Sheet", ["None"] + other_sheets)
+                        
+                        if selected_additional != "None" and selected_additional in data_dict:
+                            additional_df = data_dict[selected_additional]
+                            st.write(f"**{selected_additional} Data:**")
+                            st.dataframe(additional_df.head(20), use_container_width=True)
             
             else:
-                st.warning("Please select at least one sheet to analyze.")
+                st.warning("No options chain sheets found in the uploaded file.")
+                st.info("Available sheets: " + ", ".join(data_dict.keys()))
         
         else:
-            st.error("Could not load data from the uploaded file. Please check the file format.")
+            st.error("Could not load data from the Excel file. Please check the file format.")
     
     else:
         st.info("""
-        👋 Welcome to the NSE Trading Dashboard!
+        🚀 **Welcome to the Live NSE Options Chain Dashboard!**
+        
+        **Features:**
+        - 📊 Real-time options chain analysis
+        - 📈 Open Interest and Volume charts
+        - 💹 PCR (Put-Call Ratio) monitoring
+        - 🔢 Greeks analysis (Delta, Theta, Vega, Gamma)
+        - 📉 Implied Volatility smile
+        - ⚖️ Max Pain calculation
+        - 🎯 Support/Resistance identification
         
         **How to use:**
-        1. Upload your Excel file containing live NSE data
-        2. Select the sheets you want to analyze
-        3. Apply filters to screen stocks
-        4. View charts, tables, and analytics
+        1. Upload your Live_Option_Chain_Terminal.xlsm file
+        2. Select the options chain to analyze
+        3. Enable auto-refresh for live updates
+        4. Explore different tabs for comprehensive analysis
         
-        **Expected data format:**
-        - Each sheet should contain stock data
-        - Common columns: Symbol, Open, High, Low, Close, Volume, Change%
-        - The dashboard will adapt to your data structure
-        """)
-        
-        # Example data structure
-        st.subheader("📋 Expected Data Format")
-        example_data = pd.DataFrame({
-            'Symbol': ['RELIANCE', 'TCS', 'INFY'],
-            'Open': [2500.0, 3200.0, 1450.0],
-            'High': [2520.0, 3250.0, 1470.0],
-            'Low': [2480.0, 3180.0, 1440.0],
-            'Close': [2510.0, 3230.0, 1460.0],
-            'Volume': [1000000, 800000, 1200000],
-            'Change%': [0.4, 0.9, 0.7]
-        })
-        st.dataframe(example_data)
-
-if __name__ == "__main__":
-    main()
+        **Auto-refresh keeps your data live!** ⚡
+        ""
