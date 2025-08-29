@@ -4,7 +4,6 @@ import numpy as np
 from datetime import datetime
 import os
 st.set_page_config(page_title="F&O Trading Dashboard", page_icon="📊", layout="wide")
-
 # Enhanced CSS for comprehensive display
 st.markdown("""
 <style>
@@ -645,4 +644,161 @@ def display_live_dashboard(data_dict):
                     <table style="width:100%; color:white;">
                     <tr><td>Max Call OI Strike:</td><td><strong>{nifty_oi['max_call_strike']:.0f}</strong></td></tr>
                     <tr><td>Max Call OI:</td><td>{nifty_oi['max_call_oi']:,.0f}</td></tr>
-                    <tr><td>Max Put OI Strike:</td><td><strong>{nifty_oi['
+                    <tr><td>Max Put OI Strike:</td><td><strong>{nifty_oi['max_put_strike']:.0f}</strong></td></tr>
+                    <tr><td>Max Put OI:</td><td>{nifty_oi['max_put_oi']:,.0f}</td></tr>
+                    <tr><td>PCR:</td><td>{nifty_oi['pcr']:.3f}</td></tr>
+                    </table>
+                </div>
+                """, unsafe_allow_html=True)
+        
+        with oi_cols[1]:
+            if high_oi_data['banknifty']:
+                bnf_oi = high_oi_data['banknifty']
+                st.markdown(f"""
+                <div class="index-card">
+                    <h3>BANKNIFTY Options Analysis</h3>
+                    <table style="width:100%; color:white;">
+                    <tr><td>Max Call OI Strike:</td><td><strong>{bnf_oi['max_call_strike']:.0f}</strong></td></tr>
+                    <tr><td>Max Call OI:</td><td>{bnf_oi['max_call_oi']:,.0f}</td></tr>
+                    <tr><td>Max Put OI Strike:</td><td><strong>{bnf_oi['max_put_strike']:.0f}</strong></td></tr>
+                    <tr><td>Max Put OI:</td><td>{bnf_oi['max_put_oi']:,.0f}</td></tr>
+                    <tr><td>PCR:</td><td>{bnf_oi['pcr']:.3f}</td></tr>
+                    </table>
+                </div>
+                """, unsafe_allow_html=True)
+    
+    # F&O Bullish/Bearish Stocks Section
+    st.header("📈 F&O Stock Analysis")
+    
+    # Display bullish stocks
+    if fo_stocks['bullish']:
+        st.subheader("🟢 Bullish Stocks")
+        bullish_cols = st.columns(3)
+        for i, stock in enumerate(fo_stocks['bullish'][:9]):
+            with bullish_cols[i % 3]:
+                st.markdown(f"""
+                <div class="bullish-stock">
+                    <div>
+                        <strong>{stock['symbol']}</strong><br>
+                        <small>LTP: {stock['ltp']:.2f}</small>
+                    </div>
+                    <div>
+                        <strong>+{stock['change']:.2f}%</strong><br>
+                        <small>OI: {stock['oi']:,.0f}</small>
+                    </div>
+                </div>
+                """, unsafe_allow_html=True)
+    
+    # Display bearish stocks
+    if fo_stocks['bearish']:
+        st.subheader("🔴 Bearish Stocks")
+        bearish_cols = st.columns(3)
+        for i, stock in enumerate(fo_stocks['bearish'][:9]):
+            with bearish_cols[i % 3]:
+                st.markdown(f"""
+                <div class="bearish-stock">
+                    <div>
+                        <strong>{stock['symbol']}</strong><br>
+                        <small>LTP: {stock['ltp']:.2f}</small>
+                    </div>
+                    <div>
+                        <strong>{stock['change']:.2f}%</strong><br>
+                        <small>OI: {stock['oi']:,.0f}</small>
+                    </div>
+                </div>
+                """, unsafe_allow_html=True)
+    
+    # Trading Actions Section
+    st.header("🎯 Recommended Trading Actions")
+    
+    if fo_stocks['trading_actions']:
+        for action in fo_stocks['trading_actions']:
+            if action['action'] == 'LONG':
+                st.markdown(f"""
+                <div class="action-card long-action">
+                    <strong>LONG {action['symbol']}</strong><br>
+                    LTP: {action['ltp']:.2f} | Target: {action['target']:.2f} | SL: {action['stop_loss']:.2f}<br>
+                    <small>{action['reason']}</small><br>
+                    <small>Confidence: {action['confidence']}</small>
+                </div>
+                """, unsafe_allow_html=True)
+            else:
+                st.markdown(f"""
+                <div class="action-card short-action">
+                    <strong>SHORT {action['symbol']}</strong><br>
+                    LTP: {action['ltp']:.2f} | Target: {action['target']:.2f} | SL: {action['stop_loss']:.2f}<br>
+                    <small>{action['reason']}</small><br>
+                    <small>Confidence: {action['confidence']}</small>
+                </div>
+                """, unsafe_allow_html=True)
+    
+    # Options Unwinding Section
+    st.header("🔄 Options Unwinding Analysis")
+    
+    if unwinding_data['call_unwinding']:
+        st.subheader("📉 Call Unwinding Detected")
+        for unwind in unwinding_data['call_unwinding'][:5]:
+            st.markdown(f"""
+            <div class="unwinding-alert">
+                <strong>Strike {unwind['strike']:.0f}</strong><br>
+                OI Change: {unwind['oi_change']:,} | Price: {unwind['price']:.2f}<br>
+                <small>Sheet: {unwind['sheet']}</small>
+            </div>
+            """, unsafe_allow_html=True)
+    
+    if unwinding_data['put_unwinding']:
+        st.subheader("📈 Put Unwinding Detected")
+        for unwind in unwinding_data['put_unwinding'][:5]:
+            st.markdown(f"""
+            <div class="unwinding-alert">
+                <strong>Strike {unwind['strike']:.0f}</strong><br>
+                OI Change: {unwind['oi_change']:,} | Price: {unwind['price']:.2f}<br>
+                <small>Sheet: {unwind['sheet']}</small>
+            </div>
+            """, unsafe_allow_html=True)
+    
+    if unwinding_data['fresh_positions']:
+        st.subheader("🆕 Fresh OI Buildup")
+        for position in unwinding_data['fresh_positions'][:5]:
+            st.markdown(f"""
+            <div class="buildup-alert">
+                <strong>{position['type']} Strike {position['strike']:.0f}</strong><br>
+                OI Change: +{position['oi_change']:,}<br>
+                <small>Sheet: {position['sheet']}</small>
+            </div>
+            """, unsafe_allow_html=True)
+
+# Main execution
+def main():
+    # File upload section
+    st.sidebar.title("📁 Data Source")
+    uploaded_file = st.sidebar.file_uploader("Upload F&O Excel File", type=["xlsx", "xls"])
+    
+    if uploaded_file is not None:
+        # Save uploaded file to a temporary location
+        with open("temp_file.xlsx", "wb") as f:
+            f.write(uploaded_file.getvalue())
+        
+        # Read and process data
+        data_dict = read_comprehensive_data("temp_file.xlsx")
+        
+        if data_dict:
+            # Display dashboard
+            display_live_dashboard(data_dict)
+            
+            # Auto-refresh every 30 seconds
+            st_autorefresh(interval=30 * 1000, key="data_refresh")
+        else:
+            st.error("Could not read data from the uploaded file. Please check the file format.")
+    else:
+        st.info("Please upload an Excel file with F&O data to view the dashboard.")
+
+# Import st_autorefresh
+try:
+    from streamlit_autorefresh import st_autorefresh
+except ImportError:
+    st_autorefresh = None
+    st.warning("Auto-refresh not available. Install with: pip install streamlit-autorefresh")
+
+if __name__ == "__main__":
+    main()
