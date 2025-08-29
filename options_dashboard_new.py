@@ -3,6 +3,8 @@ import numpy as np
 import streamlit as st
 import warnings
 import time
+import subprocess
+import sys
 from datetime import datetime
 warnings.filterwarnings('ignore')
 
@@ -56,8 +58,31 @@ st.markdown("""
     border-left: 5px solid #17a2b8;
     margin: 1rem 0;
 }
+.code-box {
+    background-color: #f8f9fa;
+    color: #212529;
+    padding: 1rem;
+    border-radius: 5px;
+    font-family: monospace;
+    margin: 1rem 0;
+    border: 1px solid #dee2e6;
+}
 </style>
 """, unsafe_allow_html=True)
+
+def install_excel_libraries():
+    """Attempt to install Excel support libraries"""
+    try:
+        st.info("Attempting to install Excel support libraries...")
+        
+        # Install openpyxl and xlrd
+        subprocess.check_call([sys.executable, "-m", "pip", "install", "openpyxl", "xlrd"])
+        
+        st.success("✅ Excel libraries installed successfully!")
+        return True
+    except Exception as e:
+        st.error(f"❌ Failed to install Excel libraries: {str(e)}")
+        return False
 
 @st.cache_data(ttl=30)
 def load_data_file(file):
@@ -104,7 +129,22 @@ def load_data_file(file):
                 st.error("""
                 📊 **Excel file detected, but Excel support libraries not installed**
                 
-                **Quick Fix - Convert to CSV:**
+                **Option 1: Install Excel Libraries (Recommended)**
+                """)
+                
+                st.markdown("""
+                <div class="code-box">
+                pip install openpyxl xlrd
+                </div>
+                """, unsafe_allow_html=True)
+                
+                # Add install button
+                if st.button("🛠️ Install Excel Libraries"):
+                    if install_excel_libraries():
+                        st.rerun()
+                
+                st.markdown("""
+                **Option 2: Convert to CSV (Quick Fix)**
                 1. Open your Excel file
                 2. Select the sheet you want (e.g., OC_1, OC_2, OC_3)
                 3. File → Save As → CSV format
@@ -410,7 +450,7 @@ def display_top_strikes(df):
         st.warning(f"Could not display top strikes: {str(e)}")
 
 def main():
-    st.markdown('<h1 class="main-header">⚡ NSE Options Chain Dashboard</h1>', unsafe_allow_html=True)
+    st.markdown('<h1 class="main-header">⚡ NSE Options Dashboard</h1>', unsafe_allow_html=True)
     
     # Current time
     current_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
@@ -518,7 +558,7 @@ def main():
                 
                 with col5:
                     if max_pain:
-                        st.metric("💰 Max Pain", f"₹{int(max_pain):,}")
+                        st.metric("💰 Max Pain", f"{int(max_pain):,}")
                     else:
                         st.metric("💰 Max Pain", "N/A")
                 
@@ -533,14 +573,14 @@ def main():
                         st.markdown(f"""
                         <div class="success-box">
                         <strong>🟢 Support Level</strong><br>
-                        ₹{int(support):,} (Max Put OI)
+                        {int(support):,} (Max Put OI)
                         </div>
                         """, unsafe_allow_html=True)
                     with col2:
                         st.markdown(f"""
                         <div class="error-box">
                         <strong>🔴 Resistance Level</strong><br>
-                        ₹{int(resistance):,} (Max Call OI)
+                        {int(resistance):,} (Max Call OI)
                         </div>
                         """, unsafe_allow_html=True)
                 
