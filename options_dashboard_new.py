@@ -125,53 +125,8 @@ def load_data_file(file):
                     return data_dict
             
             except ImportError:
-                # If Excel libraries not available, show helpful message
-                st.error("""
-                📊 **Excel file detected, but Excel support libraries not installed**
-                
-                **Option 1: Install Excel Libraries (Recommended)**
-                """)
-                
-                st.markdown("""
-                <div class="code-box">
-                pip install openpyxl xlrd
-                </div>
-                """, unsafe_allow_html=True)
-                
-                # Add install button
-                if st.button("🛠️ Install Excel Libraries"):
-                    if install_excel_libraries():
-                        st.rerun()
-                
-                st.markdown("""
-                **Option 2: Convert to CSV (Quick Fix)**
-                1. Open your Excel file
-                2. Select the sheet you want (e.g., OC_1, OC_2, OC_3)
-                3. File → Save As → CSV format
-                4. Upload the CSV file instead
-                
-                **Why CSV is better:**
-                - ✅ No extra packages needed
-                - ✅ Faster loading
-                - ✅ Works on all systems
-                - ✅ Smaller file size
-                
-                **CSV files work without any extra packages!**
-                """)
-                
-                # Show a sample of how to convert
-                st.markdown("""
-                <div class="info-box">
-                <strong>📋 How to convert Excel to CSV:</strong><br>
-                1. Open your Excel file<br>
-                2. Go to File → Save As<br>
-                3. Choose "CSV (Comma delimited)" as the file type<br>
-                4. Save with a new name<br>
-                5. Upload the CSV file here
-                </div>
-                """, unsafe_allow_html=True)
-                
-                return {}
+                # If Excel libraries not available, return a special indicator
+                return {'excel_libraries_missing': True}
             
             except Exception as e:
                 # Try reading first sheet only
@@ -183,14 +138,6 @@ def load_data_file(file):
                 except Exception:
                     st.error(f"""
                     ❌ **Cannot read Excel file**: {str(e)}
-                    
-                    **Solution - Convert to CSV:**
-                    1. Open your Excel file in Excel/LibreOffice
-                    2. Select the data sheet you need
-                    3. File → Save As → CSV format
-                    4. Upload the CSV file here
-                    
-                    **CSV files are more reliable and faster!**
                     """)
                     return {}
         
@@ -483,7 +430,56 @@ def main():
         with st.spinner("Loading file..."):
             data_dict = load_data_file(uploaded_file)
         
-        if data_dict:
+        # Check if Excel libraries are missing
+        if 'excel_libraries_missing' in data_dict:
+            st.error("""
+            📊 **Excel file detected, but Excel support libraries not installed**
+            """)
+            
+            st.markdown("""
+            **Option 1: Install Excel Libraries (Recommended)**
+            """)
+            
+            st.markdown("""
+            <div class="code-box">
+            pip install openpyxl xlrd
+            </div>
+            """, unsafe_allow_html=True)
+            
+            # Add install button
+            if st.button("🛠️ Install Excel Libraries"):
+                if install_excel_libraries():
+                    st.rerun()
+            
+            st.markdown("""
+            **Option 2: Convert to CSV (Quick Fix)**
+            1. Open your Excel file
+            2. Select the sheet you want (e.g., OC_1, OC_2, OC_3)
+            3. File → Save As → CSV format
+            4. Upload the CSV file instead
+            
+            **Why CSV is better:**
+            - ✅ No extra packages needed
+            - ✅ Faster loading
+            - ✅ Works on all systems
+            - ✅ Smaller file size
+            
+            **CSV files work without any extra packages!**
+            """)
+            
+            # Show a sample of how to convert
+            st.markdown("""
+            <div class="info-box">
+            <strong>📋 How to convert Excel to CSV:</strong><br>
+            1. Open your Excel file<br>
+            2. Go to File → Save As<br>
+            3. Choose "CSV (Comma delimited)" as the file type<br>
+            4. Save with a new name<br>
+            5. Upload the CSV file here
+            </div>
+            """, unsafe_allow_html=True)
+        
+        elif data_dict:
             # Auto refresh option
             st.sidebar.header("🔄 Settings")
             auto_refresh = st.sidebar.checkbox("Auto Refresh (30 sec)", value=False)
