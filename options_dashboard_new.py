@@ -108,21 +108,32 @@ def load_data_file(file):
                 import xlrd
                 
                 # If we get here, libraries are available
-                excel_file = pd.ExcelFile(file)
-                st.info(f"📁 Found {len(excel_file.sheet_names)} sheets in Excel file")
+                try:
+                    excel_file = pd.ExcelFile(file)
+                    st.info(f"📁 Found {len(excel_file.sheet_names)} sheets in Excel file")
+                    
+                    # Try to read each sheet individually
+                    for sheet_name in excel_file.sheet_names:
+                        try:
+                            df = pd.read_excel(file, sheet_name=sheet_name)
+                            if not df.empty:
+                                data_dict[sheet_name] = df
+                                st.success(f"✅ Loaded sheet: {sheet_name} ({len(df)} rows, {len(df.columns)} columns)")
+                            else:
+                                st.warning(f"⚠️ Sheet '{sheet_name}' is empty")
+                        except Exception as sheet_error:
+                            st.warning(f"⚠️ Could not load sheet '{sheet_name}': {str(sheet_error)}")
+                            continue
+                    
+                    if data_dict:
+                        return data_dict
+                    else:
+                        st.error("❌ No sheets could be loaded from the Excel file")
+                        return {}
                 
-                for sheet_name in excel_file.sheet_names:
-                    try:
-                        df = pd.read_excel(file, sheet_name=sheet_name)
-                        if not df.empty:
-                            data_dict[sheet_name] = df
-                            st.success(f"✅ Loaded sheet: {sheet_name} ({len(df)} rows)")
-                    except Exception as e:
-                        st.warning(f"⚠️ Skipped sheet {sheet_name}: {str(e)}")
-                        continue
-                
-                if data_dict:
-                    return data_dict
+                except Exception as excel_error:
+                    st.error(f"❌ Error reading Excel file: {str(excel_error)}")
+                    return {'excel_libraries_missing': True}
             
             except ImportError:
                 # If Excel libraries not available, return a special indicator
