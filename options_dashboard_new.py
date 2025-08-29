@@ -3,6 +3,7 @@ import streamlit as st
 import numpy as np
 from datetime import datetime
 import os
+import time
 
 st.set_page_config(page_title="Professional Trading Dashboard", page_icon="⚡", layout="wide")
 
@@ -24,19 +25,21 @@ st.markdown("""
     margin: 1rem 0;
     background: linear-gradient(135deg, #f8f9fa 0%, #e9ecef 100%);
 }
-.long-signal {
+.buy-signal {
     background: linear-gradient(135deg, #28a745 0%, #20c997 100%);
     color: white;
     padding: 1rem;
     border-radius: 8px;
     margin: 0.5rem 0;
+    border-left: 5px solid #155724;
 }
-.short-signal {
+.sell-signal {
     background: linear-gradient(135deg, #dc3545 0%, #fd7e14 100%);
     color: white;
     padding: 1rem;
     border-radius: 8px;
     margin: 0.5rem 0;
+    border-left: 5px solid #721c24;
 }
 .neutral-signal {
     background: linear-gradient(135deg, #6c757d 0%, #adb5bd 100%);
@@ -53,6 +56,29 @@ st.markdown("""
     grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
     gap: 1rem;
     margin: 1rem 0;
+}
+.signal-container {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 1rem;
+    margin-bottom: 2rem;
+}
+.signal-card {
+    flex: 1;
+    min-width: 300px;
+    padding: 1rem;
+    border-radius: 8px;
+    box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+}
+.refresh-info {
+    position: fixed;
+    bottom: 10px;
+    right: 10px;
+    background: rgba(0,0,0,0.7);
+    color: white;
+    padding: 5px 10px;
+    border-radius: 5px;
+    font-size: 0.8rem;
 }
 </style>
 """, unsafe_allow_html=True)
@@ -77,6 +103,63 @@ def read_all_trading_sheets(file_path):
     except Exception as e:
         st.error(f"Error reading Excel: {str(e)}")
         return {}
+
+def extract_buy_sell_signals(data_dict):
+    """Extract best buy and sell signals from all sheets"""
+    buy_signals = []
+    sell_signals = []
+    
+    try:
+        for sheet_name, df in data_dict.items():
+            # Find signal columns
+            signal_cols = [col for col in df.columns if any(term in str(col).upper() for term in ['SIGNAL', 'RECOMMENDATION', 'ACTION', 'BUY/SELL'])]
+            symbol_cols = [col for col in df.columns if any(term in str(col).upper() for term in ['SYMBOL', 'STOCK', 'NAME'])]
+            
+            if not signal_cols or not symbol_cols:
+                continue
+                
+            signal_col = signal_cols[0]
+            symbol_col = symbol_cols[0]
+            
+            # Find additional relevant columns
+            price_cols = [col for col in df.columns if any(term in str(col).upper() for term in ['PRICE', 'LTP', 'CLOSE'])]
+            target_cols = [col for col in df.columns if any(term in str(col).upper() for term in ['TARGET', 'OBJ'])]
+            sl_cols = [col for col in df.columns if any(term in str(col).upper() for term in ['STOP LOSS', 'SL'])]
+            
+            for _, row in df.iterrows():
+                signal_val = str(row[signal_col]).upper()
+                symbol = row[symbol_col]
+                
+                # Extract additional data if available
+                price = row[price_cols[0]] if price_cols else None
+                target = row[target_cols[0]] if target_cols else None
+                stop_loss = row[sl_cols[0]] if sl_cols else None
+                
+                if 'BUY' in signal_val:
+                    buy_signals.append({
+                        'symbol': symbol,
+                        'source': sheet_name,
+                        'price': price,
+                        'target': target,
+                        'stop_loss': stop_loss
+                    })
+                elif 'SELL' in signal_val:
+                    sell_signals.append({
+                        'symbol': symbol,
+                        'source': sheet_name,
+                        'price': price,
+                        'target': target,
+                        'stop_loss': stop_loss
+                    })
+        
+        # Sort by price if available, otherwise by symbol
+        buy_signals = sorted(buy_signals, key=lambda x: (x['price'] is not None, x['price']), reverse=True)[:10]
+        sell_signals = sorted(sell_signals, key=lambda x: (x['price'] is not None, x['price']), reverse=True)[:10]
+        
+        return buy_signals, sell_signals
+    except Exception as e:
+        st.warning(f"Buy/Sell signal extraction error: {e}")
+        return [], []
 
 def extract_pcr_strategy(pcr_df):
     """Extract PCR-based trading strategy"""
@@ -308,6 +391,47 @@ def display_professional_dashboard(data_dict):
     </div>
     """, unsafe_allow_html=True)
     
+    # Extract buy/sell signals first
+    buy_signals, sell_signals = extract_buy_sell_signals(data_dict)
+    
+    # Display buy/sell signals prominently
+    st.header("Top Trading Signals")
+    
+    if buy_signals or sell_signals:
+        col1, col2 = st.columns(2)
+        
+        with col1:
+            st.subheader("🟢 BUY Signals")
+            if buy_signals:
+                for signal in buy_signals[:5]:  # Show top 5
+                    st.markdown(f"""
+                    <div class="buy-signal">
+                        <strong>{signal['symbol']}</strong> from {signal['source']}<br>
+                        Price: {signal['price'] if signal['price'] is not None else 'N/A'}<br>
+                        Target: {signal['target'] if signal['target'] is not None else 'N/A'}<br>
+                        Stop Loss: {signal['stop_loss'] if signal['stop_loss'] is not None else 'N/A'}
+                    </div>
+                    """, unsafe_allow_html=True)
+            else:
+                st.info("No BUY signals found")
+        
+        with col2:
+            st.subheader("🔴 SELL Signals")
+            if sell_signals:
+                for signal in sell_signals[:5]:  # Show top 5
+                    st.markdown(f"""
+                    <div class="sell-signal">
+                        <strong>{signal['symbol']}</strong> from {signal['source']}<br>
+                        Price: {signal['price'] if signal['price'] is not None else 'N/A'}<br>
+                        Target: {signal['target'] if signal['target'] is not None else 'N/A'}<br>
+                        Stop Loss: {signal['stop_loss'] if signal['stop_loss'] is not None else 'N/A'}
+                    </div>
+                    """, unsafe_allow_html=True)
+            else:
+                st.info("No SELL signals found")
+    else:
+        st.info("No buy/sell signals found in the uploaded data")
+    
     # Extract strategies from different sheets
     pcr_strategy = {}
     stock_strategies = {}
@@ -365,7 +489,7 @@ def display_professional_dashboard(data_dict):
                 st.subheader(f"Top {len(long_candidates)} Long Opportunities")
                 for stock in long_candidates:
                     st.markdown(f"""
-                    <div class="long-signal">
+                    <div class="buy-signal">
                         <strong>{stock['symbol']}</strong> | Change: +{stock['change']:.2f}%<br>
                         {stock['strategy']}<br>
                         Volume: {stock['volume']:,.0f}
@@ -380,7 +504,7 @@ def display_professional_dashboard(data_dict):
                 st.subheader(f"Top {len(short_candidates)} Short Opportunities")
                 for stock in short_candidates:
                     st.markdown(f"""
-                    <div class="short-signal">
+                    <div class="sell-signal">
                         <strong>{stock['symbol']}</strong> | Change: {stock['change']:.2f}%<br>
                         {stock['strategy']}<br>
                         Volume: {stock['volume']:,.0f}
@@ -423,9 +547,9 @@ def display_professional_dashboard(data_dict):
                 signal = data['signal']
                 
                 if 'BUY' in signal:
-                    card_class = 'long-signal'
+                    card_class = 'buy-signal'
                 elif 'SELL' in signal:
-                    card_class = 'short-signal'
+                    card_class = 'sell-signal'
                 else:
                     card_class = 'neutral-signal'
                 
@@ -468,9 +592,21 @@ def display_professional_dashboard(data_dict):
         st.metric("Screener Stocks", screener_count)
 
 def main():
+    # Auto-refresh configuration
+    refresh_interval = 60  # seconds
+    
+    # Initialize session state for file upload
+    if 'uploaded_file' not in st.session_state:
+        st.session_state.uploaded_file = None
+    
+    # File uploader
     uploaded_file = st.file_uploader("Upload Professional Trading Excel", type=['xlsx', 'xlsm', 'xls'])
     
-    if uploaded_file:
+    if uploaded_file is not None:
+        # Save uploaded file to session state
+        st.session_state.uploaded_file = uploaded_file
+        
+        # Process the file
         temp_path = f"temp_{uploaded_file.name}"
         with open(temp_path, "wb") as f:
             f.write(uploaded_file.getbuffer())
@@ -485,6 +621,18 @@ def main():
         
         if data_dict:
             display_professional_dashboard(data_dict)
+            
+            # Auto-refresh information
+            last_refresh = datetime.now().strftime("%H:%M:%S")
+            st.markdown(f"""
+            <div class="refresh-info">
+                Last refresh: {last_refresh} | Auto-refresh every {refresh_interval} seconds
+            </div>
+            """, unsafe_allow_html=True)
+            
+            # Auto-refresh logic
+            time.sleep(refresh_interval)
+            st.experimental_rerun()
         else:
             st.error("Could not process trading data")
     else:
@@ -499,6 +647,11 @@ def main():
         - **Greeks**: Options Greeks analysis
         - **FII DII Data**: Institutional flow data
         """)
+        
+        # If we have a file in session state but no new upload, keep showing it
+        if st.session_state.uploaded_file is not None:
+            st.info("Showing previously uploaded data. Upload a new file to refresh.")
+            # We don't auto-refresh in this case to avoid confusion
 
 if __name__ == "__main__":
     main()
