@@ -19,7 +19,7 @@ if st.sidebar.checkbox("🔄 Auto Refresh (30 sec)", value=True):
         st.warning("⚠️ `streamlit-autorefresh` not installed.\n\n👉 Run: `pip install streamlit-autorefresh`\n\nUsing manual refresh instead.")
         if st.button("🔄 Refresh Now"):
             st.cache_data.clear()
-            st.experimental_rerun()
+            st.info("🔄 Cache cleared. Please press **R** or reload the page to refresh data.")
 
 # === File Path ===
 file_path = "Live_Option_Chain_Terminal.xlsm"
