@@ -1,596 +1,456 @@
+# Advanced Options Analytics Module
+# This module can be integrated with the main dashboard for additional features
+
 import pandas as pd
 import numpy as np
-import streamlit as st
-import plotly.express as px
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
+import streamlit as st
+from scipy import stats
 import warnings
-import time
-from datetime import datetime, timedelta
 warnings.filterwarnings('ignore')
 
-# Set page config
-st.set_page_config(
-    page_title="NSE Options Chain Dashboard",
-    page_icon="⚡",
-    layout="wide",
-    initial_sidebar_state="expanded"
-)
-
-# Custom CSS for styling
-st.markdown("""
-<style>
-    .main-header {
-        font-size: 2.5rem;
-        font-weight: bold;
-        text-align: center;
-        color: #FF6B35;
-        margin-bottom: 1rem;
-        text-shadow: 2px 2px 4px rgba(0,0,0,0.1);
-    }
-    .sub-header {
-        font-size: 1.5rem;
-        font-weight: bold;
-        color: #1f77b4;
-        margin-bottom: 1rem;
-    }
-    .metric-card {
-        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-        padding: 1rem;
-        border-radius: 10px;
-        color: white;
-        text-align: center;
-    }
-    .option-card {
-        background-color: #f8f9fa;
-        border: 2px solid #e9ecef;
-        border-radius: 8px;
-        padding: 1rem;
-        margin: 0.5rem 0;
-    }
-    .call-option {
-        border-left: 5px solid #28a745;
-    }
-    .put-option {
-        border-left: 5px solid #dc3545;
-    }
-    .stSelectbox > div > div > div {
-        background-color: #f0f2f6;
-    }
-    .highlight-positive {
-        color: #28a745;
-        font-weight: bold;
-    }
-    .highlight-negative {
-        color: #dc3545;
-        font-weight: bold;
-    }
-</style>
-""", unsafe_allow_html=True)
-
-@st.cache_data(ttl=30)  # Cache for 30 seconds for real-time updates
-def load_options_data(file_path):
-    """Load options chain data from Excel file"""
-    try:
-        # Load all sheets
-        excel_file = pd.ExcelFile(file_path)
-        data_dict = {}
+class AdvancedOptionsAnalytics:
+    """Advanced analytics for options trading"""
+    
+    def __init__(self, options_data):
+        self.data = options_data
+        self.setup_data()
+    
+    def setup_data(self):
+        """Prepare data for analysis"""
+        if not self.data.empty:
+            # Clean and prepare strike prices
+            self.data['Strike'] = pd.to_numeric(self.data['Strike'], errors='coerce')
+            self.data = self.data.dropna(subset=['Strike'])
+            self.data = self.data.sort_values('Strike')
+    
+    def calculate_option_flow_signals(self):
+        """Calculate unusual options activity signals"""
+        signals = {}
         
-        for sheet_name in excel_file.sheet_names:
-            try:
-                df = pd.read_excel(file_path, sheet_name=sheet_name)
-                data_dict[sheet_name] = df
-            except:
-                continue
+        try:
+            # Volume vs OI ratio (indicates fresh money flow)
+            if all(col in self.data.columns for col in ['CE_Total_Traded_Volume', 'CE_OI', 'PE_Total_Traded_Volume', 'PE_OI']):
+                self.data['CE_Volume_OI_Ratio'] = self.data['CE_Total_Traded_Volume'] / (self.data['CE_OI'] + 1)
+                self.data['PE_Volume_OI_Ratio'] = self.data['PE_Total_Traded_Volume'] / (self.data['PE_OI'] + 1)
                 
-        return data_dict
-    except Exception as e:
-        st.error(f"Error loading Excel file: {str(e)}")
-        return {}
-
-def calculate_option_metrics(df):
-    """Calculate key options metrics"""
-    metrics = {}
-    
-    if 'CE_OI' in df.columns and 'PE_OI' in df.columns:
-        # Total Call and Put OI
-        metrics['total_call_oi'] = df['CE_OI'].sum()
-        metrics['total_put_oi'] = df['PE_OI'].sum()
-        metrics['pcr_oi'] = metrics['total_put_oi'] / metrics['total_call_oi'] if metrics['total_call_oi'] > 0 else 0
-    
-    if 'CE_Total_Traded_Volume' in df.columns and 'PE_Total_Traded_Volume' in df.columns:
-        # Total Call and Put Volume
-        metrics['total_call_volume'] = df['CE_Total_Traded_Volume'].sum()
-        metrics['total_put_volume'] = df['PE_Total_Traded_Volume'].sum()
-        metrics['pcr_volume'] = metrics['total_put_volume'] / metrics['total_call_volume'] if metrics['total_call_volume'] > 0 else 0
-    
-    # Max Pain calculation
-    if all(col in df.columns for col in ['Strike', 'CE_OI', 'PE_OI']):
-        max_pain = calculate_max_pain(df)
-        metrics['max_pain'] = max_pain
-    
-    return metrics
-
-def calculate_max_pain(df):
-    """Calculate Max Pain strike price"""
-    try:
-        strikes = df['Strike'].dropna().sort_values()
-        total_pain = []
+                # High volume/OI ratio indicates unusual activity
+                ce_unusual = self.data[self.data['CE_Volume_OI_Ratio'] > self.data['CE_Volume_OI_Ratio'].quantile(0.8)]
+                pe_unusual = self.data[self.data['PE_Volume_OI_Ratio'] > self.data['PE_Volume_OI_Ratio'].quantile(0.8)]
+                
+                signals['unusual_call_activity'] = ce_unusual[['Strike', 'CE_Volume_OI_Ratio', 'CE_Total_Traded_Volume', 'CE_OI']]
+                signals['unusual_put_activity'] = pe_unusual[['Strike', 'PE_Volume_OI_Ratio', 'PE_Total_Traded_Volume', 'PE_OI']]
+            
+            # OI Change analysis
+            if 'CE_OI_Change' in self.data.columns and 'PE_OI_Change' in self.data.columns:
+                # Significant OI changes
+                significant_ce_change = self.data[abs(self.data['CE_OI_Change']) > self.data['CE_OI_Change'].std() * 2]
+                significant_pe_change = self.data[abs(self.data['PE_OI_Change']) > self.data['PE_OI_Change'].std() * 2]
+                
+                signals['significant_call_oi_change'] = significant_ce_change[['Strike', 'CE_OI_Change', 'CE_OI']]
+                signals['significant_put_oi_change'] = significant_pe_change[['Strike', 'PE_OI_Change', 'PE_OI']]
         
-        for strike in strikes:
-            call_pain = df[df['Strike'] < strike]['CE_OI'].sum() * (strike - df[df['Strike'] < strike]['Strike']).sum()
-            put_pain = df[df['Strike'] > strike]['PE_OI'].sum() * (df[df['Strike'] > strike]['Strike'] - strike).sum()
-            total_pain.append(call_pain + put_pain)
+        except Exception as e:
+            st.warning(f"Error calculating option flow signals: {str(e)}")
         
-        max_pain_strike = strikes.iloc[np.argmin(total_pain)]
-        return max_pain_strike
-    except:
-        return None
-
-def create_oi_chart(df, symbol):
-    """Create Open Interest chart"""
-    fig = go.Figure()
+        return signals
     
-    if all(col in df.columns for col in ['Strike', 'CE_OI', 'PE_OI']):
-        # Call OI
-        fig.add_trace(go.Bar(
-            x=df['Strike'],
-            y=df['CE_OI'],
-            name='Call OI',
-            marker_color='green',
-            opacity=0.7,
-            yaxis='y'
-        ))
+    def calculate_volatility_skew(self):
+        """Calculate volatility skew metrics"""
+        try:
+            if all(col in self.data.columns for col in ['Strike', 'CE_IV(Spot)', 'PE_IV(Spot)']):
+                # ATM strike (closest to current price - we'll use median strike as proxy)
+                atm_strike = self.data['Strike'].median()
+                
+                # Skew calculation
+                call_iv_data = self.data[['Strike', 'CE_IV(Spot)']].dropna()
+                put_iv_data = self.data[['Strike', 'PE_IV(Spot)']].dropna()
+                
+                # Calculate skew slope (change in IV per strike)
+                if len(call_iv_data) > 1:
+                    call_skew_slope, _, _, _, _ = stats.linregress(call_iv_data['Strike'], call_iv_data['CE_IV(Spot)'])
+                else:
+                    call_skew_slope = 0
+                
+                if len(put_iv_data) > 1:
+                    put_skew_slope, _, _, _, _ = stats.linregress(put_iv_data['Strike'], put_iv_data['PE_IV(Spot)'])
+                else:
+                    put_skew_slope = 0
+                
+                # Term structure (if multiple expiries available)
+                skew_metrics = {
+                    'call_skew_slope': call_skew_slope,
+                    'put_skew_slope': put_skew_slope,
+                    'atm_strike': atm_strike,
+                    'call_iv_range': call_iv_data['CE_IV(Spot)'].max() - call_iv_data['CE_IV(Spot)'].min(),
+                    'put_iv_range': put_iv_data['PE_IV(Spot)'].max() - put_iv_data['PE_IV(Spot)'].min()
+                }
+                
+                return skew_metrics
         
-        # Put OI (negative for visual effect)
-        fig.add_trace(go.Bar(
-            x=df['Strike'],
-            y=-df['PE_OI'],
-            name='Put OI',
-            marker_color='red',
-            opacity=0.7,
-            yaxis='y'
-        ))
+        except Exception as e:
+            st.warning(f"Error calculating volatility skew: {str(e)}")
+            return {}
     
-    fig.update_layout(
-        title=f'{symbol} - Open Interest Distribution',
-        xaxis_title='Strike Price',
-        yaxis_title='Open Interest',
-        hovermode='x unified',
-        height=500,
-        barmode='relative'
-    )
-    
-    return fig
-
-def create_volume_chart(df, symbol):
-    """Create Volume chart"""
-    fig = go.Figure()
-    
-    if all(col in df.columns for col in ['Strike', 'CE_Total_Traded_Volume', 'PE_Total_Traded_Volume']):
-        # Call Volume
-        fig.add_trace(go.Bar(
-            x=df['Strike'],
-            y=df['CE_Total_Traded_Volume'],
-            name='Call Volume',
-            marker_color='lightgreen',
-            opacity=0.7
-        ))
+    def calculate_gamma_exposure(self, spot_price=None):
+        """Calculate gamma exposure levels"""
+        try:
+            if not spot_price:
+                # Use median strike as proxy for spot
+                spot_price = self.data['Strike'].median()
+            
+            gamma_exposure = {}
+            
+            if all(col in self.data.columns for col in ['Strike', 'CE_Gamma(Spot)', 'PE_Gamma(Spot)', 'CE_OI', 'PE_OI']):
+                # Calculate gamma exposure for each strike
+                self.data['CE_Gamma_Exposure'] = self.data['CE_Gamma(Spot)'] * self.data['CE_OI'] * 100  # 100 shares per contract
+                self.data['PE_Gamma_Exposure'] = self.data['PE_Gamma(Spot)'] * self.data['PE_OI'] * 100 * -1  # Negative for puts
+                self.data['Net_Gamma_Exposure'] = self.data['CE_Gamma_Exposure'] + self.data['PE_Gamma_Exposure']
+                
+                # Find key gamma levels
+                gamma_exposure['total_gamma'] = self.data['Net_Gamma_Exposure'].sum()
+                gamma_exposure['max_gamma_strike'] = self.data.loc[self.data['Net_Gamma_Exposure'].abs().idxmax(), 'Strike']
+                gamma_exposure['gamma_flip_point'] = self.find_gamma_flip_point()
+                
+                # Positive/Negative gamma zones
+                gamma_exposure['positive_gamma_strikes'] = self.data[self.data['Net_Gamma_Exposure'] > 0]['Strike'].tolist()
+                gamma_exposure['negative_gamma_strikes'] = self.data[self.data['Net_Gamma_Exposure'] < 0]['Strike'].tolist()
+            
+            return gamma_exposure
         
-        # Put Volume (negative for visual effect)
-        fig.add_trace(go.Bar(
-            x=df['Strike'],
-            y=-df['PE_Total_Traded_Volume'],
-            name='Put Volume',
-            marker_color='lightcoral',
-            opacity=0.7
-        ))
+        except Exception as e:
+            st.warning(f"Error calculating gamma exposure: {str(e)}")
+            return {}
     
-    fig.update_layout(
-        title=f'{symbol} - Volume Distribution',
-        xaxis_title='Strike Price',
-        yaxis_title='Volume',
-        hovermode='x unified',
-        height=500,
-        barmode='relative'
-    )
+    def find_gamma_flip_point(self):
+        """Find where gamma changes from positive to negative"""
+        try:
+            if 'Net_Gamma_Exposure' in self.data.columns:
+                # Find the strike where gamma flips sign
+                sorted_data = self.data.sort_values('Strike')
+                
+                for i in range(1, len(sorted_data)):
+                    current_gamma = sorted_data.iloc[i]['Net_Gamma_Exposure']
+                    previous_gamma = sorted_data.iloc[i-1]['Net_Gamma_Exposure']
+                    
+                    if (current_gamma > 0 and previous_gamma < 0) or (current_gamma < 0 and previous_gamma > 0):
+                        return sorted_data.iloc[i]['Strike']
+                
+            return None
+        except:
+            return None
     
-    return fig
-
-def create_iv_chart(df, symbol):
-    """Create Implied Volatility chart"""
-    fig = go.Figure()
-    
-    if all(col in df.columns for col in ['Strike', 'CE_IV(Spot)', 'PE_IV(Spot)']):
-        # Call IV
-        fig.add_trace(go.Scatter(
-            x=df['Strike'],
-            y=df['CE_IV(Spot)'],
-            mode='lines+markers',
-            name='Call IV',
-            line=dict(color='green', width=2),
-            marker=dict(size=6)
-        ))
+    def calculate_dealer_positioning(self):
+        """Estimate dealer positioning based on options flow"""
+        positioning = {}
         
-        # Put IV
-        fig.add_trace(go.Scatter(
-            x=df['Strike'],
-            y=df['PE_IV(Spot)'],
-            mode='lines+markers',
-            name='Put IV',
-            line=dict(color='red', width=2),
-            marker=dict(size=6)
-        ))
-    
-    fig.update_layout(
-        title=f'{symbol} - Implied Volatility Smile',
-        xaxis_title='Strike Price',
-        yaxis_title='Implied Volatility',
-        hovermode='x unified',
-        height=500
-    )
-    
-    return fig
-
-def create_greeks_chart(df, symbol, greek='Delta'):
-    """Create Greeks chart"""
-    fig = go.Figure()
-    
-    call_greek = f'CE_{greek}(Spot)'
-    put_greek = f'PE_{greek}(Spot)'
-    
-    if all(col in df.columns for col in ['Strike', call_greek, put_greek]):
-        # Call Greek
-        fig.add_trace(go.Scatter(
-            x=df['Strike'],
-            y=df[call_greek],
-            mode='lines+markers',
-            name=f'Call {greek}',
-            line=dict(color='green', width=2)
-        ))
+        try:
+            if all(col in self.data.columns for col in ['CE_OI', 'PE_OI', 'CE_Total_Traded_Volume', 'PE_Total_Traded_Volume']):
+                # Assume dealers are short gamma (selling options to retail)
+                total_call_oi = self.data['CE_OI'].sum()
+                total_put_oi = self.data['PE_OI'].sum()
+                
+                # Simple dealer position estimation
+                positioning['estimated_dealer_call_position'] = -total_call_oi * 0.7  # Assume dealers short 70% of calls
+                positioning['estimated_dealer_put_position'] = -total_put_oi * 0.7   # Assume dealers short 70% of puts
+                
+                # Net dealer position
+                positioning['net_dealer_position'] = positioning['estimated_dealer_call_position'] + positioning['estimated_dealer_put_position']
+                
+                # Hedging pressure
+                positioning['call_hedging_pressure'] = total_call_oi / (total_call_oi + total_put_oi)
+                positioning['put_hedging_pressure'] = total_put_oi / (total_call_oi + total_put_oi)
         
-        # Put Greek
-        fig.add_trace(go.Scatter(
-            x=df['Strike'],
-            y=df[put_greek],
-            mode='lines+markers',
-            name=f'Put {greek}',
-            line=dict(color='red', width=2)
-        ))
+        except Exception as e:
+            st.warning(f"Error calculating dealer positioning: {str(e)}")
+        
+        return positioning
     
-    fig.update_layout(
-        title=f'{symbol} - {greek} Distribution',
-        xaxis_title='Strike Price',
-        yaxis_title=greek,
-        hovermode='x unified',
-        height=400
-    )
+    def create_flow_heatmap(self):
+        """Create options flow heatmap"""
+        try:
+            if all(col in self.data.columns for col in ['Strike', 'CE_Total_Traded_Volume', 'PE_Total_Traded_Volume']):
+                fig = go.Figure()
+                
+                # Create heatmap data
+                strikes = self.data['Strike'].values
+                call_volumes = self.data['CE_Total_Traded_Volume'].values
+                put_volumes = self.data['PE_Total_Traded_Volume'].values
+                
+                # Normalize volumes for better visualization
+                max_volume = max(call_volumes.max(), put_volumes.max())
+                call_volumes_norm = call_volumes / max_volume
+                put_volumes_norm = put_volumes / max_volume
+                
+                # Create heatmap
+                fig.add_trace(go.Heatmap(
+                    z=[call_volumes_norm, put_volumes_norm],
+                    x=strikes,
+                    y=['Calls', 'Puts'],
+                    colorscale='RdYlGn',
+                    showscale=True,
+                    hoverongaps=False
+                ))
+                
+                fig.update_layout(
+                    title='Options Flow Heatmap',
+                    xaxis_title='Strike Price',
+                    yaxis_title='Option Type',
+                    height=400
+                )
+                
+                return fig
+        
+        except Exception as e:
+            st.warning(f"Error creating flow heatmap: {str(e)}")
+            return None
     
-    return fig
+    def create_gamma_profile_chart(self):
+        """Create gamma exposure profile chart"""
+        try:
+            if 'Net_Gamma_Exposure' in self.data.columns:
+                fig = go.Figure()
+                
+                # Gamma exposure bars
+                colors = ['green' if x >= 0 else 'red' for x in self.data['Net_Gamma_Exposure']]
+                
+                fig.add_trace(go.Bar(
+                    x=self.data['Strike'],
+                    y=self.data['Net_Gamma_Exposure'],
+                    marker_color=colors,
+                    name='Net Gamma Exposure',
+                    opacity=0.7
+                ))
+                
+                # Add zero line
+                fig.add_hline(y=0, line_dash="dash", line_color="black")
+                
+                fig.update_layout(
+                    title='Gamma Exposure Profile',
+                    xaxis_title='Strike Price',
+                    yaxis_title='Net Gamma Exposure',
+                    height=500,
+                    showlegend=False
+                )
+                
+                return fig
+        
+        except Exception as e:
+            st.warning(f"Error creating gamma profile chart: {str(e)}")
+            return None
+    
+    def create_skew_analysis_chart(self):
+        """Create volatility skew analysis chart"""
+        try:
+            if all(col in self.data.columns for col in ['Strike', 'CE_IV(Spot)', 'PE_IV(Spot)']):
+                fig = make_subplots(
+                    rows=2, cols=1,
+                    subplot_titles=['Implied Volatility Skew', 'Put-Call IV Spread'],
+                    vertical_spacing=0.1
+                )
+                
+                # IV Skew
+                fig.add_trace(
+                    go.Scatter(x=self.data['Strike'], y=self.data['CE_IV(Spot)'], 
+                              mode='lines+markers', name='Call IV', line=dict(color='green')),
+                    row=1, col=1
+                )
+                
+                fig.add_trace(
+                    go.Scatter(x=self.data['Strike'], y=self.data['PE_IV(Spot)'], 
+                              mode='lines+markers', name='Put IV', line=dict(color='red')),
+                    row=1, col=1
+                )
+                
+                # Put-Call IV Spread
+                iv_spread = self.data['PE_IV(Spot)'] - self.data['CE_IV(Spot)']
+                fig.add_trace(
+                    go.Scatter(x=self.data['Strike'], y=iv_spread, 
+                              mode='lines+markers', name='Put-Call IV Spread', line=dict(color='purple')),
+                    row=2, col=1
+                )
+                
+                fig.add_hline(y=0, line_dash="dash", line_color="black", row=2, col=1)
+                
+                fig.update_layout(height=600, showlegend=True)
+                fig.update_xaxes(title_text="Strike Price", row=2, col=1)
+                fig.update_yaxes(title_text="Implied Volatility", row=1, col=1)
+                fig.update_yaxes(title_text="IV Spread", row=2, col=1)
+                
+                return fig
+        
+        except Exception as e:
+            st.warning(f"Error creating skew analysis chart: {str(e)}")
+            return None
 
-def display_option_chain_table(df, symbol):
-    """Display formatted option chain table"""
-    st.subheader(f"📊 {symbol} Options Chain")
+def display_advanced_analytics(options_data):
+    """Main function to display advanced analytics"""
     
-    if df.empty:
-        st.warning("No data available for this symbol")
+    st.header("🔬 Advanced Options Analytics")
+    
+    if options_data.empty:
+        st.warning("No data available for advanced analytics")
         return
     
-    # Select key columns for display
-    display_columns = []
+    # Initialize analytics
+    analytics = AdvancedOptionsAnalytics(options_data)
     
-    # Call options columns
-    call_cols = ['CE_OI', 'CE_OI_Change', 'CE_Total_Traded_Volume', 'CE_LTP', 'CE_LTP_Change', 'CE_IV(Spot)']
-    # Put options columns  
-    put_cols = ['PE_OI', 'PE_OI_Change', 'PE_Total_Traded_Volume', 'PE_LTP', 'PE_LTP_Change', 'PE_IV(Spot)']
+    # Create tabs for different analytics
+    tab1, tab2, tab3, tab4 = st.tabs([
+        "📊 Option Flow", 
+        "📈 Gamma Analysis", 
+        "🌊 Volatility Skew", 
+        "🏪 Dealer Positioning"
+    ])
     
-    # Build display dataframe
-    display_df = pd.DataFrame()
-    
-    if 'Strike' in df.columns:
-        display_df['Strike'] = df['Strike']
-    
-    # Add available call columns
-    for col in call_cols:
-        if col in df.columns:
-            display_df[col.replace('CE_', 'C_')] = df[col]
-    
-    # Add available put columns
-    for col in put_cols:
-        if col in df.columns:
-            display_df[col.replace('PE_', 'P_')] = df[col]
-    
-    # Format the dataframe for better display
-    numeric_cols = display_df.select_dtypes(include=[np.number]).columns
-    display_df[numeric_cols] = display_df[numeric_cols].round(2)
-    
-    # Color coding for changes
-    def highlight_changes(val):
-        try:
-            if 'Change' in str(val):
-                if val > 0:
-                    return 'background-color: lightgreen'
-                elif val < 0:
-                    return 'background-color: lightcoral'
-        except:
-            pass
-        return ''
-    
-    styled_df = display_df.style.applymap(highlight_changes)
-    st.dataframe(styled_df, use_container_width=True, height=600)
-
-def main():
-    st.markdown('<h1 class="main-header">⚡ Live NSE Options Chain Dashboard</h1>', unsafe_allow_html=True)
-    
-    # Sidebar configuration
-    st.sidebar.header("⚙️ Dashboard Configuration")
-    
-    # File uploader
-    uploaded_file = st.sidebar.file_uploader(
-        "Upload Options Chain Excel File",
-        type=['xlsx', 'xlsm'],
-        help="Upload your Live_Option_Chain_Terminal.xlsm file"
-    )
-    
-    if uploaded_file is not None:
-        # Load data
-        data_dict = load_options_data(uploaded_file)
+    with tab1:
+        st.subheader("Unusual Options Activity")
         
-        if data_dict:
-            # Auto refresh settings
-            st.sidebar.header("🔄 Auto Refresh")
-            auto_refresh = st.sidebar.checkbox("Enable Auto Refresh", value=True)
-            refresh_interval = st.sidebar.slider("Refresh Interval (seconds)", 5, 60, 15)
+        signals = analytics.calculate_option_flow_signals()
+        
+        if signals:
+            col1, col2 = st.columns(2)
             
-            if auto_refresh:
-                st.sidebar.info(f"Auto refreshing every {refresh_interval} seconds")
-                time.sleep(refresh_interval)
-                st.rerun()
-            
-            # Symbol selection
-            st.sidebar.header("📈 Symbol Selection")
-            
-            # Get available option chains
-            option_sheets = [sheet for sheet in data_dict.keys() if 'OC_' in sheet or 'Option' in sheet]
-            
-            if option_sheets:
-                selected_sheet = st.sidebar.selectbox("Select Options Chain", option_sheets)
+            with col1:
+                if 'unusual_call_activity' in signals and not signals['unusual_call_activity'].empty:
+                    st.write("**🟢 Unusual Call Activity:**")
+                    st.dataframe(signals['unusual_call_activity'], use_container_width=True)
                 
-                if selected_sheet in data_dict:
-                    df = data_dict[selected_sheet].copy()
-                    
-                    # Get symbol from the data
-                    symbol = "OPTIONS"
-                    if 'FNO Symbol' in df.columns:
-                        symbol = df['FNO Symbol'].iloc[0] if len(df) > 0 else "OPTIONS"
-                    
-                    # Main dashboard layout
-                    st.markdown(f'<h2 class="sub-header">📊 {symbol} Options Analysis</h2>', unsafe_allow_html=True)
-                    
-                    # Calculate metrics
-                    metrics = calculate_option_metrics(df)
-                    
-                    # Display key metrics
-                    col1, col2, col3, col4, col5 = st.columns(5)
-                    
-                    with col1:
-                        if 'total_call_oi' in metrics:
-                            st.metric(
-                                "Total Call OI",
-                                f"{metrics['total_call_oi']:,.0f}",
-                                delta=None
-                            )
-                    
-                    with col2:
-                        if 'total_put_oi' in metrics:
-                            st.metric(
-                                "Total Put OI", 
-                                f"{metrics['total_put_oi']:,.0f}",
-                                delta=None
-                            )
-                    
-                    with col3:
-                        if 'pcr_oi' in metrics:
-                            pcr_color = "normal"
-                            if metrics['pcr_oi'] > 1.2:
-                                pcr_color = "inverse"
-                            elif metrics['pcr_oi'] < 0.8:
-                                pcr_color = "inverse"
-                            
-                            st.metric(
-                                "PCR (OI)",
-                                f"{metrics['pcr_oi']:.3f}",
-                                delta=None
-                            )
-                    
-                    with col4:
-                        if 'pcr_volume' in metrics:
-                            st.metric(
-                                "PCR (Volume)",
-                                f"{metrics['pcr_volume']:.3f}",
-                                delta=None
-                            )
-                    
-                    with col5:
-                        if 'max_pain' in metrics and metrics['max_pain']:
-                            st.metric(
-                                "Max Pain",
-                                f"₹{metrics['max_pain']:.0f}",
-                                delta=None
-                            )
-                    
-                    # Create tabs for different views
-                    tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs([
-                        "📊 Option Chain", 
-                        "📈 Open Interest", 
-                        "📊 Volume", 
-                        "📈 IV Smile", 
-                        "🔢 Greeks",
-                        "💹 Analysis"
-                    ])
-                    
-                    with tab1:
-                        display_option_chain_table(df, symbol)
-                        
-                        # Download option
-                        csv = df.to_csv(index=False)
-                        st.download_button(
-                            label="📥 Download Options Data as CSV",
-                            data=csv,
-                            file_name=f"{symbol}_options_chain.csv",
-                            mime="text/csv"
-                        )
-                    
-                    with tab2:
-                        fig_oi = create_oi_chart(df, symbol)
-                        st.plotly_chart(fig_oi, use_container_width=True)
-                        
-                        # OI Analysis
-                        if 'CE_OI' in df.columns and 'PE_OI' in df.columns:
-                            st.subheader("📊 OI Analysis")
-                            
-                            col1, col2 = st.columns(2)
-                            with col1:
-                                st.write("**Top 5 Call OI Strikes:**")
-                                top_call_oi = df.nlargest(5, 'CE_OI')[['Strike', 'CE_OI']]
-                                st.dataframe(top_call_oi, hide_index=True)
-                            
-                            with col2:
-                                st.write("**Top 5 Put OI Strikes:**")
-                                top_put_oi = df.nlargest(5, 'PE_OI')[['Strike', 'PE_OI']]
-                                st.dataframe(top_put_oi, hide_index=True)
-                    
-                    with tab3:
-                        fig_vol = create_volume_chart(df, symbol)
-                        st.plotly_chart(fig_vol, use_container_width=True)
-                        
-                        # Volume Analysis
-                        if all(col in df.columns for col in ['CE_Total_Traded_Volume', 'PE_Total_Traded_Volume']):
-                            st.subheader("📊 Volume Analysis")
-                            
-                            col1, col2 = st.columns(2)
-                            with col1:
-                                st.write("**Top 5 Call Volume Strikes:**")
-                                top_call_vol = df.nlargest(5, 'CE_Total_Traded_Volume')[['Strike', 'CE_Total_Traded_Volume']]
-                                st.dataframe(top_call_vol, hide_index=True)
-                            
-                            with col2:
-                                st.write("**Top 5 Put Volume Strikes:**")
-                                top_put_vol = df.nlargest(5, 'PE_Total_Traded_Volume')[['Strike', 'PE_Total_Traded_Volume']]
-                                st.dataframe(top_put_vol, hide_index=True)
-                    
-                    with tab4:
-                        fig_iv = create_iv_chart(df, symbol)
-                        st.plotly_chart(fig_iv, use_container_width=True)
-                        
-                        # IV Statistics
-                        if all(col in df.columns for col in ['CE_IV(Spot)', 'PE_IV(Spot)']):
-                            st.subheader("📊 IV Statistics")
-                            
-                            col1, col2 = st.columns(2)
-                            with col1:
-                                st.write("**Call IV Stats:**")
-                                call_iv_stats = df['CE_IV(Spot)'].describe()
-                                st.dataframe(call_iv_stats.to_frame('Call IV'), use_container_width=True)
-                            
-                            with col2:
-                                st.write("**Put IV Stats:**")
-                                put_iv_stats = df['PE_IV(Spot)'].describe()
-                                st.dataframe(put_iv_stats.to_frame('Put IV'), use_container_width=True)
-                    
-                    with tab5:
-                        # Greeks selection
-                        greek_options = ['Delta', 'Theta', 'Vega', 'Gamma', 'Rho']
-                        selected_greek = st.selectbox("Select Greek to Display", greek_options)
-                        
-                        fig_greek = create_greeks_chart(df, symbol, selected_greek)
-                        st.plotly_chart(fig_greek, use_container_width=True)
-                        
-                        # Greeks summary
-                        greek_cols = [f'CE_{selected_greek}(Spot)', f'PE_{selected_greek}(Spot)']
-                        if all(col in df.columns for col in greek_cols):
-                            st.subheader(f"📊 {selected_greek} Summary")
-                            
-                            col1, col2 = st.columns(2)
-                            with col1:
-                                st.metric(f"Avg Call {selected_greek}", f"{df[greek_cols[0]].mean():.4f}")
-                            with col2:
-                                st.metric(f"Avg Put {selected_greek}", f"{df[greek_cols[1]].mean():.4f}")
-                    
-                    with tab6:
-                        st.subheader("💹 Market Analysis")
-                        
-                        # Support and Resistance levels based on OI
-                        if all(col in df.columns for col in ['Strike', 'CE_OI', 'PE_OI']):
-                            # Calculate support and resistance
-                            max_put_oi_strike = df.loc[df['PE_OI'].idxmax(), 'Strike']
-                            max_call_oi_strike = df.loc[df['CE_OI'].idxmax(), 'Strike']
-                            
-                            col1, col2, col3 = st.columns(3)
-                            
-                            with col1:
-                                st.metric("🔴 Resistance (Max Call OI)", f"₹{max_call_oi_strike:.0f}")
-                            
-                            with col2:
-                                st.metric("🟢 Support (Max Put OI)", f"₹{max_put_oi_strike:.0f}")
-                            
-                            with col3:
-                                if 'max_pain' in metrics and metrics['max_pain']:
-                                    st.metric("⚖️ Max Pain", f"₹{metrics['max_pain']:.0f}")
-                        
-                        # Market sentiment
-                        st.subheader("📊 Market Sentiment")
-                        
-                        if 'pcr_oi' in metrics:
-                            pcr = metrics['pcr_oi']
-                            if pcr > 1.3:
-                                sentiment = "🐻 Bearish (High PCR)"
-                                sentiment_color = "red"
-                            elif pcr < 0.7:
-                                sentiment = "🐂 Bullish (Low PCR)"
-                                sentiment_color = "green"
-                            else:
-                                sentiment = "⚖️ Neutral"
-                                sentiment_color = "orange"
-                            
-                            st.markdown(f'<p style="color: {sentiment_color}; font-size: 1.2em; font-weight: bold;">{sentiment}</p>', unsafe_allow_html=True)
-                            
-                        # Additional sheets analysis
-                        st.subheader("📋 Additional Data Sheets")
-                        
-                        other_sheets = [sheet for sheet in data_dict.keys() if sheet not in option_sheets]
-                        selected_additional = st.selectbox("Select Additional Sheet", ["None"] + other_sheets)
-                        
-                        if selected_additional != "None" and selected_additional in data_dict:
-                            additional_df = data_dict[selected_additional]
-                            st.write(f"**{selected_additional} Data:**")
-                            st.dataframe(additional_df.head(20), use_container_width=True)
+                if 'significant_call_oi_change' in signals and not signals['significant_call_oi_change'].empty:
+                    st.write("**📈 Significant Call OI Changes:**")
+                    st.dataframe(signals['significant_call_oi_change'], use_container_width=True)
             
-            else:
-                st.warning("No options chain sheets found in the uploaded file.")
-                st.info("Available sheets: " + ", ".join(data_dict.keys()))
+            with col2:
+                if 'unusual_put_activity' in signals and not signals['unusual_put_activity'].empty:
+                    st.write("**🔴 Unusual Put Activity:**")
+                    st.dataframe(signals['unusual_put_activity'], use_container_width=True)
+                
+                if 'significant_put_oi_change' in signals and not signals['significant_put_oi_change'].empty:
+                    st.write("**📉 Significant Put OI Changes:**")
+                    st.dataframe(signals['significant_put_oi_change'], use_container_width=True)
         
-        else:
-            st.error("Could not load data from the Excel file. Please check the file format.")
+        # Flow heatmap
+        flow_heatmap = analytics.create_flow_heatmap()
+        if flow_heatmap:
+            st.plotly_chart(flow_heatmap, use_container_width=True)
     
-    else:
-        st.info("""
-        🚀 **Welcome to the Live NSE Options Chain Dashboard!**
+    with tab2:
+        st.subheader("Gamma Exposure Analysis")
         
-        **Features:**
-        - 📊 Real-time options chain analysis
-        - 📈 Open Interest and Volume charts
-        - 💹 PCR (Put-Call Ratio) monitoring
-        - 🔢 Greeks analysis (Delta, Theta, Vega, Gamma)
-        - 📉 Implied Volatility smile
-        - ⚖️ Max Pain calculation
-        - 🎯 Support/Resistance identification
+        gamma_exposure = analytics.calculate_gamma_exposure()
         
-        **How to use:**
-        1. Upload your Live_Option_Chain_Terminal.xlsm file
-        2. Select the options chain to analyze
-        3. Enable auto-refresh for live updates
-        4. Explore different tabs for comprehensive analysis
+        if gamma_exposure:
+            col1, col2, col3 = st.columns(3)
+            
+            with col1:
+                if 'total_gamma' in gamma_exposure:
+                    st.metric("Total Net Gamma", f"{gamma_exposure['total_gamma']:,.0f}")
+            
+            with col2:
+                if 'max_gamma_strike' in gamma_exposure:
+                    st.metric("Max Gamma Strike", f"₹{gamma_exposure['max_gamma_strike']:,.0f}")
+            
+            with col3:
+                if 'gamma_flip_point' in gamma_exposure and gamma_exposure['gamma_flip_point']:
+                    st.metric("Gamma Flip Point", f"₹{gamma_exposure['gamma_flip_point']:,.0f}")
         
-        **Auto-refresh keeps your data live!** ⚡
-        ""
+        # Gamma profile chart
+        gamma_chart = analytics.create_gamma_profile_chart()
+        if gamma_chart:
+            st.plotly_chart(gamma_chart, use_container_width=True)
+        
+        # Gamma zones
+        if gamma_exposure and 'positive_gamma_strikes' in gamma_exposure:
+            col1, col2 = st.columns(2)
+            
+            with col1:
+                st.write("**🟢 Positive Gamma Zones:**")
+                if gamma_exposure['positive_gamma_strikes']:
+                    st.write(f"Strikes: {', '.join(map(str, gamma_exposure['positive_gamma_strikes'][:10]))}")
+                else:
+                    st.write("None identified")
+            
+            with col2:
+                st.write("**🔴 Negative Gamma Zones:**")
+                if gamma_exposure['negative_gamma_strikes']:
+                    st.write(f"Strikes: {', '.join(map(str, gamma_exposure['negative_gamma_strikes'][:10]))}")
+                else:
+                    st.write("None identified")
+    
+    with tab3:
+        st.subheader("Volatility Skew Analysis")
+        
+        skew_metrics = analytics.calculate_volatility_skew()
+        
+        if skew_metrics:
+            col1, col2, col3 = st.columns(3)
+            
+            with col1:
+                if 'call_skew_slope' in skew_metrics:
+                    st.metric("Call Skew Slope", f"{skew_metrics['call_skew_slope']:.6f}")
+            
+            with col2:
+                if 'put_skew_slope' in skew_metrics:
+                    st.metric("Put Skew Slope", f"{skew_metrics['put_skew_slope']:.6f}")
+            
+            with col3:
+                if 'call_iv_range' in skew_metrics:
+                    st.metric("Call IV Range", f"{skew_metrics['call_iv_range']:.4f}")
+        
+        # Skew analysis chart
+        skew_chart = analytics.create_skew_analysis_chart()
+        if skew_chart:
+            st.plotly_chart(skew_chart, use_container_width=True)
+        
+        # Skew interpretation
+        if skew_metrics:
+            st.subheader("📊 Skew Interpretation")
+            
+            call_slope = skew_metrics.get('call_skew_slope', 0)
+            put_slope = skew_metrics.get('put_skew_slope', 0)
+            
+            if call_slope > 0 and put_slope > 0:
+                st.info("📈 **Forward Skew**: Higher strikes have higher IV - indicates fear of upside moves")
+            elif call_slope < 0 and put_slope < 0:
+                st.info("📉 **Reverse Skew**: Lower strikes have higher IV - indicates fear of downside moves")
+            else:
+                st.info("⚖️ **Mixed Skew**: Complex volatility structure - analyze individual strikes")
+    
+    with tab4:
+        st.subheader("Dealer Positioning Estimates")
+        
+        dealer_pos = analytics.calculate_dealer_positioning()
+        
+        if dealer_pos:
+            col1, col2 = st.columns(2)
+            
+            with col1:
+                st.write("**📊 Estimated Dealer Positions:**")
+                if 'estimated_dealer_call_position' in dealer_pos:
+                    st.metric("Dealer Call Position", f"{dealer_pos['estimated_dealer_call_position']:,.0f}")
+                if 'estimated_dealer_put_position' in dealer_pos:
+                    st.metric("Dealer Put Position", f"{dealer_pos['estimated_dealer_put_position']:,.0f}")
+            
+            with col2:
+                st.write("**⚖️ Hedging Pressure:**")
+                if 'call_hedging_pressure' in dealer_pos:
+                    st.metric("Call Hedging Pressure", f"{dealer_pos['call_hedging_pressure']:.2%}")
+                if 'put_hedging_pressure' in dealer_pos:
+                    st.metric("Put Hedging Pressure", f"{dealer_pos['put_hedging_pressure']:.2%}")
+        
+        # Positioning interpretation
+        st.subheader("📊 Positioning Insights")
+        
+        if dealer_pos and 'net_dealer_position' in dealer_pos:
+            net_pos = dealer_pos['net_dealer_position']
+            
+            if net_pos < -50000:
+                st.warning("🔴 **Heavy Dealer Short Position**: Dealers likely hedging by selling underlying - bearish pressure")
+            elif net_pos > 50000:
+                st.success("🟢 **Heavy Dealer Long Position**: Dealers likely hedging by buying underlying - bullish pressure")
+            else:
+                st.info("⚖️ **Balanced Dealer Position**: Neutral market maker positioning")
+
+# Usage example:
+# display_advanced_analytics(options_dataframe)
