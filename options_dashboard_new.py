@@ -244,73 +244,68 @@ def extract_fo_bullish_bearish_stocks(data_dict):
     return fo_stocks
 
 def extract_comprehensive_pcr_data(data_dict):
-    """Extract comprehensive PCR and OI data from all relevant sheets"""
+    """Extract PCR data based on actual data structure"""
     pcr_data = {}
     
-    # Look in multiple possible sheets for PCR data
-    pcr_sheets = ['PCR & OI Chart', 'Dashboard', 'Data', 'Globlemarket']
-    
-    for sheet_name in pcr_sheets:
-        if sheet_name in data_dict:
-            df = data_dict[sheet_name]
-            
-            try:
-                # Extract PCR values with flexible matching
-                for col in df.columns:
-                    col_str = str(col).upper()
-                    if 'PCR' in col_str or 'PUT CALL RATIO' in col_str:
-                        pcr_values = pd.to_numeric(df[col], errors='coerce').dropna()
-                        if not pcr_values.empty:
-                            current_pcr = pcr_values.iloc[-1]
-                            pcr_data[f'{sheet_name}_{col}'] = {
-                                'value': current_pcr,
-                                'interpretation': get_pcr_interpretation(current_pcr)
-                            }
-                
+    # Look for sheets with options data
+    for sheet_name, df in data_dict.items():
+        try:
+            # Check if this sheet has the expected structure from your images
+            if any(col in df.columns for col in ['SP', 'NET COI', 'NET OI', 'COI PCR', 'OI PCR']):
                 # Extract NIFTY PCR if available
-                nifty_pcr_col = find_column_by_keywords(df.columns, ['NIFTY', 'PCR'])
-                if nifty_pcr_col:
-                    pcr_values = pd.to_numeric(df[nifty_pcr_col], errors='coerce').dropna()
-                    if not pcr_values.empty:
-                        current_pcr = pcr_values.iloc[-1]
-                        pcr_data['NIFTY_PCR'] = {
-                            'value': current_pcr,
-                            'interpretation': get_pcr_interpretation(current_pcr)
-                        }
+                nifty_rows = df[df.iloc[:, 0].astype(str).str.contains('NIFTY', na=False)]
+                if not nifty_rows.empty:
+                    row = nifty_rows.iloc[0]
+                    if 'COI PCR' in df.columns:
+                        coi_pcr = pd.to_numeric(row['COI PCR'], errors='coerce')
+                        if not pd.isna(coi_pcr):
+                            pcr_data['NIFTY_COI_PCR'] = {
+                                'value': coi_pcr,
+                                'interpretation': get_pcr_interpretation(coi_pcr)
+                            }
+                    
+                    if 'OI PCR' in df.columns:
+                        oi_pcr = pd.to_numeric(row['OI PCR'], errors='coerce')
+                        if not pd.isna(oi_pcr):
+                            pcr_data['NIFTY_OI_PCR'] = {
+                                'value': oi_pcr,
+                                'interpretation': get_pcr_interpretation(oi_pcr)
+                            }
                 
                 # Extract BANKNIFTY PCR if available
-                banknifty_pcr_col = find_column_by_keywords(df.columns, ['BANKNIFTY', 'BNF', 'PCR'])
-                if banknifty_pcr_col:
-                    pcr_values = pd.to_numeric(df[banknifty_pcr_col], errors='coerce').dropna()
+                bnf_rows = df[df.iloc[:, 0].astype(str).str.contains('BANKNIFTY', na=False)]
+                if not bnf_rows.empty:
+                    row = bnf_rows.iloc[0]
+                    if 'COI PCR' in df.columns:
+                        coi_pcr = pd.to_numeric(row['COI PCR'], errors='coerce')
+                        if not pd.isna(coi_pcr):
+                            pcr_data['BANKNIFTY_COI_PCR'] = {
+                                'value': coi_pcr,
+                                'interpretation': get_pcr_interpretation(coi_pcr)
+                            }
+                    
+                    if 'OI PCR' in df.columns:
+                        oi_pcr = pd.to_numeric(row['OI PCR'], errors='coerce')
+                        if not pd.isna(oi_pcr):
+                            pcr_data['BANKNIFTY_OI_PCR'] = {
+                                'value': oi_pcr,
+                                'interpretation': get_pcr_interpretation(oi_pcr)
+                            }
+            
+            # Also look for individual PCR columns in other sheets
+            for col in df.columns:
+                col_str = str(col).upper()
+                if 'PCR' in col_str:
+                    pcr_values = pd.to_numeric(df[col], errors='coerce').dropna()
                     if not pcr_values.empty:
                         current_pcr = pcr_values.iloc[-1]
-                        pcr_data['BANKNIFTY_PCR'] = {
+                        pcr_data[f'{sheet_name}_{col}'] = {
                             'value': current_pcr,
                             'interpretation': get_pcr_interpretation(current_pcr)
                         }
-                
-                # Extract OI data with flexible matching
-                oi_data = {}
-                for col in df.columns:
-                    col_str = str(col).upper()
-                    if ('OI' in col_str and 'PCR' not in col_str) or 'OPEN INTEREST' in col_str:
-                        oi_values = pd.to_numeric(df[col], errors='coerce').dropna()
-                        if not oi_values.empty:
-                            current_oi = oi_values.iloc[-1]
-                            previous_oi = oi_values.iloc[-2] if len(oi_values) > 1 else current_oi
-                            oi_change = current_oi - previous_oi
-                            
-                            oi_data[col] = {
-                                'current': current_oi,
-                                'change': oi_change,
-                                'change_pct': (oi_change / previous_oi * 100) if previous_oi != 0 else 0
-                            }
-                
-                if oi_data:
-                    pcr_data['oi_analysis'] = oi_data
-                    
-            except:
-                pass
+                        
+        except Exception as e:
+            continue
     
     return pcr_data
 
@@ -326,6 +321,148 @@ def get_pcr_interpretation(pcr_value):
         return {'signal': 'BULLISH', 'action': 'Bullish bias', 'confidence': 'MEDIUM'}
     else:
         return {'signal': 'NEUTRAL', 'action': 'Range-bound', 'confidence': 'LOW'}
+
+def extract_high_oi_analysis(data_dict):
+    """Extract high OI strikes and generate option strategies based on actual data structure"""
+    high_oi_data = {'nifty': {}, 'banknifty': {}, 'strategies': []}
+    
+    for sheet_name, df in data_dict.items():
+        try:
+            # Check if this sheet has options data structure like in your images
+            if 'Strike Price' in df.columns or any(col in df.columns for col in ['SP', 'NET COI', 'NET OI']):
+                
+                # Determine index type from the sheet or data
+                index_type = 'nifty'
+                if 'BANKNIFTY' in sheet_name.upper() or any('BANKNIFTY' in str(cell) for cell in df.values.flatten() if pd.notna(cell)):
+                    index_type = 'banknifty'
+                
+                # Look for strike-wise data
+                strike_data = []
+                
+                for _, row in df.iterrows():
+                    try:
+                        # Try to find strike price
+                        strike = None
+                        if 'Strike Price' in df.columns:
+                            strike = pd.to_numeric(row['Strike Price'], errors='coerce')
+                        elif 'SP' in df.columns:
+                            strike = pd.to_numeric(row['SP'], errors='coerce')
+                        
+                        if pd.isna(strike):
+                            continue
+                        
+                        # Get OI data
+                        call_oi = 0
+                        put_oi = 0
+                        
+                        if 'NET COI' in df.columns:
+                            call_oi = pd.to_numeric(row['NET COI'], errors='coerce') or 0
+                        if 'NET OI' in df.columns:
+                            put_oi = pd.to_numeric(row['NET OI'], errors='coerce') or 0
+                        
+                        # Get PCR data
+                        coi_pcr = pd.to_numeric(row.get('COI PCR', 0), errors='coerce') or 0
+                        oi_pcr = pd.to_numeric(row.get('OI PCR', 0), errors='coerce') or 0
+                        
+                        strike_data.append({
+                            'strike': strike,
+                            'call_oi': abs(call_oi),  # Use absolute value
+                            'put_oi': abs(put_oi),    # Use absolute value
+                            'coi_pcr': coi_pcr,
+                            'oi_pcr': oi_pcr
+                        })
+                        
+                    except:
+                        continue
+                
+                if strike_data:
+                    # Sort by OI to find highest
+                    max_call_oi_strike = max(strike_data, key=lambda x: x['call_oi'])
+                    max_put_oi_strike = max(strike_data, key=lambda x: x['put_oi'])
+                    
+                    # Calculate total PCR
+                    total_call_oi = sum(s['call_oi'] for s in strike_data)
+                    total_put_oi = sum(s['put_oi'] for s in strike_data)
+                    pcr = total_put_oi / total_call_oi if total_call_oi > 0 else 0
+                    
+                    # Store analysis
+                    high_oi_data[index_type] = {
+                        'max_call_strike': max_call_oi_strike['strike'],
+                        'max_call_oi': max_call_oi_strike['call_oi'],
+                        'max_put_strike': max_put_oi_strike['strike'],
+                        'max_put_oi': max_put_oi_strike['put_oi'],
+                        'pcr': pcr,
+                        'total_call_oi': total_call_oi,
+                        'total_put_oi': total_put_oi
+                    }
+                    
+                    # Generate strategies - SAFE VERSION
+                    try:
+                        call_strike_str = str(int(max_call_oi_strike['strike']))
+                        call_oi_str = f"{max_call_oi_strike['call_oi']:,.0f}"
+                        
+                        high_oi_data['strategies'].append({
+                            'index': index_type.upper(),
+                            'strategy': 'SELL CALL',
+                            'strike': call_strike_str,
+                            'premium': 'Market Price',
+                            'oi_text': f"Call OI: {call_oi_str}",
+                            'reason': f'Maximum Call OI at {call_strike_str} - Strong Resistance',
+                            'risk': 'UNLIMITED',
+                            'reward': 'PREMIUM RECEIVED'
+                        })
+                    except:
+                        pass
+                    
+                    try:
+                        put_strike_str = str(int(max_put_oi_strike['strike']))
+                        put_oi_str = f"{max_put_oi_strike['put_oi']:,.0f}"
+                        
+                        high_oi_data['strategies'].append({
+                            'index': index_type.upper(),
+                            'strategy': 'SELL PUT',
+                            'strike': put_strike_str,
+                            'premium': 'Market Price',
+                            'oi_text': f"Put OI: {put_oi_str}",
+                            'reason': f'Maximum Put OI at {put_strike_str} - Strong Support',
+                            'risk': 'UNLIMITED',
+                            'reward': 'PREMIUM RECEIVED'
+                        })
+                    except:
+                        pass
+                    
+                    # PCR-based strategies
+                    try:
+                        pcr_str = f"{pcr:.3f}"
+                        if pcr > 1.3:  # Bearish
+                            high_oi_data['strategies'].append({
+                                'index': index_type.upper(),
+                                'strategy': 'BUY PUT',
+                                'strike': 'ATM',
+                                'premium': 'Market Price',
+                                'oi_text': f'PCR: {pcr_str} (Bearish)',
+                                'reason': 'High PCR indicates bearish sentiment',
+                                'risk': 'PREMIUM PAID',
+                                'reward': 'UNLIMITED DOWNSIDE'
+                            })
+                        elif pcr < 0.7:  # Bullish
+                            high_oi_data['strategies'].append({
+                                'index': index_type.upper(),
+                                'strategy': 'BUY CALL',
+                                'strike': 'ATM',
+                                'premium': 'Market Price',
+                                'oi_text': f'PCR: {pcr_str} (Bullish)',
+                                'reason': 'Low PCR indicates bullish sentiment',
+                                'risk': 'PREMIUM PAID',
+                                'reward': 'UNLIMITED UPSIDE'
+                            })
+                    except:
+                        pass
+                        
+        except:
+            continue
+    
+    return high_oi_data
 
 def detect_options_unwinding(data_dict):
     """Detect call and put unwinding patterns"""
@@ -410,182 +547,6 @@ def detect_options_unwinding(data_dict):
     
     return unwinding_data
 
-def extract_high_oi_analysis(data_dict):
-    """Extract high OI strikes and generate option strategies"""
-    high_oi_data = {'nifty': {}, 'banknifty': {}, 'strategies': []}
-    
-    for sheet_name, df in data_dict.items():
-        if 'OC_' in sheet_name or any(term in sheet_name.upper() for term in ['NIFTY', 'BANKNIFTY', 'OPTIONS']):
-            try:
-                # Determine index type
-                index_type = 'nifty' if 'NIFTY' in sheet_name.upper() else 'banknifty' if 'BANKNIFTY' in sheet_name.upper() else 'nifty'
-                
-                # Find relevant columns
-                strike_col = find_column_by_keywords(df.columns, ['STRIKE'])
-                call_oi_col = find_column_by_keywords(df.columns, ['CE OI', 'CALL OI', 'CE_OI'])
-                put_oi_col = find_column_by_keywords(df.columns, ['PE OI', 'PUT OI', 'PE_OI'])
-                call_ltp_col = find_column_by_keywords(df.columns, ['CE LTP', 'CALL LTP', 'CE_LTP'])
-                put_ltp_col = find_column_by_keywords(df.columns, ['PE LTP', 'PUT LTP', 'PE_LTP'])
-                call_oi_change_col = find_column_by_keywords(df.columns, ['CE CHG OI', 'CALL CHANGE OI', 'CE_CHG_OI'])
-                put_oi_change_col = find_column_by_keywords(df.columns, ['PE CHG OI', 'PUT CHANGE OI', 'PE_CHG_OI'])
-                
-                if not all([strike_col, call_oi_col, put_oi_col]):
-                    continue
-                
-                # Get spot price from data if available
-                spot_price = None
-                for col in df.columns:
-                    if any(term in str(col).upper() for term in ['SPOT', 'UNDERLYING', 'INDEX PRICE']):
-                        spot_values = pd.to_numeric(df[col], errors='coerce').dropna()
-                        if not spot_values.empty:
-                            spot_price = spot_values.iloc[0]
-                            break
-                
-                # Calculate total OI and find high OI strikes
-                df['call_oi_num'] = pd.to_numeric(df[call_oi_col], errors='coerce')
-                df['put_oi_num'] = pd.to_numeric(df[put_oi_col], errors='coerce')
-                df['strike_num'] = pd.to_numeric(df[strike_col], errors='coerce')
-                
-                # Remove NaN values
-                valid_data = df.dropna(subset=['call_oi_num', 'put_oi_num', 'strike_num'])
-                
-                if valid_data.empty:
-                    continue
-                
-                # Find max OI strikes
-                max_call_oi_row = valid_data.loc[valid_data['call_oi_num'].idxmax()]
-                max_put_oi_row = valid_data.loc[valid_data['put_oi_num'].idxmax()]
-                
-                # Calculate PCR
-                total_call_oi = valid_data['call_oi_num'].sum()
-                total_put_oi = valid_data['put_oi_num'].sum()
-                pcr = total_put_oi / total_call_oi if total_call_oi > 0 else 0
-                
-                # Store high OI data
-                high_oi_data[index_type] = {
-                    'max_call_strike': max_call_oi_row['strike_num'],
-                    'max_call_oi': max_call_oi_row['call_oi_num'],
-                    'max_put_strike': max_put_oi_row['strike_num'],
-                    'max_put_oi': max_put_oi_row['put_oi_num'],
-                    'pcr': pcr,
-                    'spot_price': spot_price,
-                    'total_call_oi': total_call_oi,
-                    'total_put_oi': total_put_oi
-                }
-                
-                # Generate option strategies based on OI analysis
-                if call_ltp_col and put_ltp_col:
-                    max_call_ltp = pd.to_numeric(max_call_oi_row[call_ltp_col], errors='coerce')
-                    max_put_ltp = pd.to_numeric(max_put_oi_row[put_ltp_col], errors='coerce')
-                    
-                    # Strategy 1: High Call OI - Resistance level
-                    if not pd.isna(max_call_ltp) and max_call_ltp > 0:
-                        strategy = {
-                            'index': index_type.upper(),
-                            'strategy': 'SELL CALL',
-                            'strike': max_call_oi_row['strike_num'],
-                            'premium': max_call_ltp,
-                            'oi': max_call_oi_row['call_oi_num'],
-                            'reason': f'High Call OI at {max_call_oi_row["strike_num"]} - Strong Resistance',
-                            'risk': 'LIMITED PREMIUM',
-                            'reward': f'₹{max_call_ltp:.2f} per lot'
-                        }
-                        high_oi_data['strategies'].append(strategy)
-                    
-                    # Strategy 2: High Put OI - Support level
-                    if not pd.isna(max_put_ltp) and max_put_ltp > 0:
-                        strategy = {
-                            'index': index_type.upper(),
-                            'strategy': 'SELL PUT',
-                            'strike': max_put_oi_row['strike_num'],
-                            'premium': max_put_ltp,
-                            'oi': max_put_oi_row['put_oi_num'],
-                            'reason': f'High Put OI at {max_put_oi_row["strike_num"]} - Strong Support',
-                            'risk': 'LIMITED PREMIUM',
-                            'reward': f'₹{max_put_ltp:.2f} per lot'
-                        }
-                        high_oi_data['strategies'].append(strategy)
-                
-                # Generate PCR-based strategies
-                if pcr > 1.3:  # Bearish
-                    high_oi_data['strategies'].append({
-                        'index': index_type.upper(),
-                        'strategy': 'BUY PUT / SELL CALL',
-                        'strike': f'ATM ({spot_price:.0f})' if spot_price else 'ATM',
-                        'premium': 'Market Price',
-                        'oi': f'PCR: {pcr:.3f}',
-                        'reason': f'High PCR ({pcr:.3f}) indicates bearish sentiment',
-                        'risk': 'PREMIUM PAID',
-                        'reward': 'UNLIMITED DOWNSIDE'
-                    })
-                elif pcr < 0.7:  # Bullish
-                    high_oi_data['strategies'].append({
-                        'index': index_type.upper(),
-                        'strategy': 'BUY CALL / SELL PUT',
-                        'strike': f'ATM ({spot_price:.0f})' if spot_price else 'ATM',
-                        'premium': 'Market Price',
-                        'oi': f'PCR: {pcr:.3f}',
-                        'reason': f'Low PCR ({pcr:.3f}) indicates bullish sentiment',
-                        'risk': 'PREMIUM PAID',
-                        'reward': 'UNLIMITED UPSIDE'
-                    })
-                
-            except Exception as e:
-                continue
-    
-    return high_oi_data
-    """Extract Nifty and BankNifty options data for analysis"""
-    index_data = {'nifty': {}, 'banknifty': {}}
-    
-    for sheet_name, df in data_dict.items():
-        # Check if this sheet contains Nifty or BankNifty data
-        index_type = None
-        if 'NIFTY' in sheet_name.upper():
-            index_type = 'nifty'
-        elif 'BANKNIFTY' in sheet_name.upper():
-            index_type = 'banknifty'
-        
-        if index_type is None:
-            continue
-        
-        try:
-            # Find relevant columns
-            strike_col = find_column_by_keywords(df.columns, ['STRIKE'])
-            call_oi_col = find_column_by_keywords(df.columns, ['CE', 'CALL', 'OI'])
-            put_oi_col = find_column_by_keywords(df.columns, ['PE', 'PUT', 'OI'])
-            call_oi_change_col = find_column_by_keywords(df.columns, ['CE', 'CALL', 'CHANGE', 'OI'])
-            put_oi_change_col = find_column_by_keywords(df.columns, ['PE', 'PUT', 'CHANGE', 'OI'])
-            call_price_col = find_column_by_keywords(df.columns, ['CE', 'CALL', 'LTP', 'PRICE'])
-            put_price_col = find_column_by_keywords(df.columns, ['PE', 'PUT', 'LTP', 'PRICE'])
-            
-            if not strike_col or not call_oi_col or not put_oi_col:
-                continue
-            
-            # Calculate PCR
-            total_call_oi = pd.to_numeric(df[call_oi_col], errors='coerce').sum()
-            total_put_oi = pd.to_numeric(df[put_oi_col], errors='coerce').sum()
-            pcr = total_put_oi / total_call_oi if total_call_oi > 0 else 0
-            
-            # Find max OI strikes
-            max_call_oi_idx = pd.to_numeric(df[call_oi_col], errors='coerce').idxmax()
-            max_put_oi_idx = pd.to_numeric(df[put_oi_col], errors='coerce').idxmax()
-            
-            resistance_strike = df.iloc[max_call_oi_idx][strike_col] if not pd.isna(max_call_oi_idx) else None
-            support_strike = df.iloc[max_put_oi_idx][strike_col] if not pd.isna(max_put_oi_idx) else None
-            
-            # Store index data
-            index_data[index_type] = {
-                'pcr': pcr,
-                'resistance_strike': resistance_strike,
-                'support_strike': support_strike,
-                'interpretation': get_index_interpretation(pcr, None, resistance_strike, support_strike)
-            }
-            
-        except:
-            continue
-    
-    return index_data
-
 def get_index_interpretation(pcr, spot_price, resistance_strike, support_strike):
     """Interpret index options data"""
     interpretation = {
@@ -653,28 +614,25 @@ def display_live_dashboard(data_dict):
                 """, unsafe_allow_html=True)
     
     # High OI Analysis & Option Strategies
-    st.header("🎯 Option Strategies Based on High OI")
+    st.header("Option Strategies Based on High OI")
     
     if high_oi_data['strategies']:
-        strategy_cols = st.columns(2)
-        
-        for i, strategy in enumerate(high_oi_data['strategies'][:6]):
-            col = strategy_cols[i % 2]
-            with col:
-                strategy_color = "#28a745" if "BUY" in strategy['strategy'] else "#dc3545" if "SELL" in strategy['strategy'] else "#6f42c1"
-                st.markdown(f"""
-                <div class="action-card" style="border-left-color: {strategy_color}; background-color: rgba(111, 66, 193, 0.1);">
-                    <strong>{strategy['index']} - {strategy['strategy']}</strong><br>
-                    Strike: {strategy['strike']} | Premium: {strategy['premium']}<br>
-                    OI: {strategy['oi']:,.0f} (if numeric)<br>
-                    <small>{strategy['reason']}</small><br>
-                    <small>Risk: {strategy['risk']} | Reward: {strategy['reward']}</small>
-                </div>
-                """, unsafe_allow_html=True)
+        # Show strategies in cards similar to your layout
+        for strategy in high_oi_data['strategies'][:6]:
+            strategy_color = "#28a745" if "BUY" in strategy['strategy'] else "#dc3545" if "SELL" in strategy['strategy'] else "#6f42c1"
+            st.markdown(f"""
+            <div class="action-card" style="border-left-color: {strategy_color}; background-color: rgba(111, 66, 193, 0.1);">
+                <strong>{strategy['index']} - {strategy['strategy']}</strong><br>
+                Strike: {strategy['strike']} | Premium: {strategy['premium']}<br>
+                {strategy['oi_text']}<br>
+                <small>{strategy['reason']}</small><br>
+                <small>Risk: {strategy['risk']} | Reward: {strategy['reward']}</small>
+            </div>
+            """, unsafe_allow_html=True)
     
-    # High OI Levels Display
+    # High OI Levels Display in tabular format like your images
     if high_oi_data['nifty'] or high_oi_data['banknifty']:
-        st.subheader("🔥 High OI Levels")
+        st.subheader("High OI Analysis")
         
         oi_cols = st.columns(2)
         
@@ -683,216 +641,8 @@ def display_live_dashboard(data_dict):
                 nifty_oi = high_oi_data['nifty']
                 st.markdown(f"""
                 <div class="index-card">
-                    <h3>NIFTY High OI</h3>
-                    <p>Max Call OI: {nifty_oi['max_call_strike']:.0f} ({nifty_oi['max_call_oi']:,.0f})</p>
-                    <p>Max Put OI: {nifty_oi['max_put_strike']:.0f} ({nifty_oi['max_put_oi']:,.0f})</p>
-                    <p>PCR: {nifty_oi['pcr']:.3f}</p>
-                    <p>Spot: {nifty_oi['spot_price']:.2f} (if available)</p>
-                </div>
-                """, unsafe_allow_html=True)
-        
-        with oi_cols[1]:
-            if high_oi_data['banknifty']:
-                bnf_oi = high_oi_data['banknifty']
-                st.markdown(f"""
-                <div class="index-card">
-                    <h3>BANKNIFTY High OI</h3>
-                    <p>Max Call OI: {bnf_oi['max_call_strike']:.0f} ({bnf_oi['max_call_oi']:,.0f})</p>
-                    <p>Max Put OI: {bnf_oi['max_put_strike']:.0f} ({bnf_oi['max_put_oi']:,.0f})</p>
-                    <p>PCR: {bnf_oi['pcr']:.3f}</p>
-                    <p>Spot: {bnf_oi['spot_price']:.2f} (if available)</p>
-                </div>
-                """, unsafe_allow_html=True)
-    
-    # Trading Actions Section
-    st.header("🔥 Active Trading Signals")
-    
-    long_actions = [action for action in fo_stocks['trading_actions'] if action['action'] == 'LONG']
-    short_actions = [action for action in fo_stocks['trading_actions'] if action['action'] == 'SHORT']
-    
-    action_cols = st.columns(2)
-    
-    with action_cols[0]:
-        st.subheader("🟢 LONG Positions")
-        if long_actions:
-            for action in long_actions[:8]:
-                st.markdown(f"""
-                <div class="action-card long-action">
-                    <strong>{action['symbol']}</strong> - LONG<br>
-                    Entry: ₹{action['ltp']:.2f} | Target: ₹{action['target']:.2f} | SL: ₹{action['stop_loss']:.2f}<br>
-                    <small>Confidence: {action['confidence']}</small>
-                </div>
-                """, unsafe_allow_html=True)
-        else:
-            st.info("No LONG signals active")
-    
-    with action_cols[1]:
-        st.subheader("🔴 SHORT Positions")
-        if short_actions:
-            for action in short_actions[:8]:
-                st.markdown(f"""
-                <div class="action-card short-action">
-                    <strong>{action['symbol']}</strong> - SHORT<br>
-                    Entry: ₹{action['ltp']:.2f} | Target: ₹{action['target']:.2f} | SL: ₹{action['stop_loss']:.2f}<br>
-                    <small>Confidence: {action['confidence']}</small>
-                </div>
-                """, unsafe_allow_html=True)
-        else:
-            st.info("No SHORT signals active")
-    
-    # Market Overview
-    st.header("📊 Market Overview")
-    
-    overview_cols = st.columns(4)
-    
-    with overview_cols[0]:
-        st.metric("Bullish Stocks", len(fo_stocks['bullish']))
-    
-    with overview_cols[1]:
-        st.metric("Bearish Stocks", len(fo_stocks['bearish']))
-    
-    with overview_cols[2]:
-        total_unwinding = len(unwinding_data['call_unwinding']) + len(unwinding_data['put_unwinding'])
-        st.metric("Unwinding Strikes", total_unwinding)
-    
-    with overview_cols[3]:
-        st.metric("Fresh OI Buildup", len(unwinding_data['fresh_positions']))
-    
-    # Stock Performance
-    if fo_stocks['bullish'] or fo_stocks['bearish']:
-        st.header("📈 Top Performers")
-        
-        perf_cols = st.columns(2)
-        
-        with perf_cols[0]:
-            if fo_stocks['bullish']:
-                st.subheader("🟢 Top Gainers")
-                for stock in fo_stocks['bullish'][:10]:
-                    st.markdown(f"""
-                    <div class="bullish-stock">
-                        <div><strong>{stock['symbol']}</strong><br><small>₹{stock['ltp']:.2f}</small></div>
-                        <div><h4>+{stock['change']:.2f}%</h4></div>
-                    </div>
-                    """, unsafe_allow_html=True)
-        
-        with perf_cols[1]:
-            if fo_stocks['bearish']:
-                st.subheader("🔴 Top Losers")
-                for stock in fo_stocks['bearish'][:10]:
-                    st.markdown(f"""
-                    <div class="bearish-stock">
-                        <div><strong>{stock['symbol']}</strong><br><small>₹{stock['ltp']:.2f}</small></div>
-                        <div><h4>{stock['change']:.2f}%</h4></div>
-                    </div>
-                    """, unsafe_allow_html=True)
-    
-    # Options Activity
-    if unwinding_data['call_unwinding'] or unwinding_data['put_unwinding']:
-        st.header("🔄 Options Activity")
-        
-        unwind_cols = st.columns(2)
-        
-        with unwind_cols[0]:
-            if unwinding_data['call_unwinding']:
-                st.subheader("Call Unwinding")
-                for unwind in unwinding_data['call_unwinding'][:5]:
-                    st.markdown(f"""
-                    <div class="unwinding-alert">
-                        <strong>Strike {unwind['strike']:.0f}</strong><br>
-                        OI Change: {unwind['oi_change']:,.0f}
-                    </div>
-                    """, unsafe_allow_html=True)
-        
-        with unwind_cols[1]:
-            if unwinding_data['put_unwinding']:
-                st.subheader("Put Unwinding")
-                for unwind in unwinding_data['put_unwinding'][:5]:
-                    st.markdown(f"""
-                    <div class="unwinding-alert">
-                        <strong>Strike {unwind['strike']:.0f}</strong><br>
-                        OI Change: {unwind['oi_change']:,.0f}
-                    </div>
-                    """, unsafe_allow_html=True)
-        
-        with perf_cols[0]:
-            if fo_stocks['bullish']:
-                st.subheader("🟢 Top Gainers")
-                for stock in fo_stocks['bullish'][:10]:
-                    st.markdown(f"""
-                    <div class="bullish-stock">
-                        <div><strong>{stock['symbol']}</strong><br><small>₹{stock['ltp']:.2f}</small></div>
-                        <div><h4>+{stock['change']:.2f}%</h4></div>
-                    </div>
-                    """, unsafe_allow_html=True)
-        
-        with perf_cols[1]:
-            if fo_stocks['bearish']:
-                st.subheader("🔴 Top Losers")
-                for stock in fo_stocks['bearish'][:10]:
-                    st.markdown(f"""
-                    <div class="bearish-stock">
-                        <div><strong>{stock['symbol']}</strong><br><small>₹{stock['ltp']:.2f}</small></div>
-                        <div><h4>{stock['change']:.2f}%</h4></div>
-                    </div>
-                    """, unsafe_allow_html=True)
-    
-    # Options Activity
-    if unwinding_data['call_unwinding'] or unwinding_data['put_unwinding']:
-        st.header("🔄 Options Activity")
-        
-        unwind_cols = st.columns(2)
-        
-        with unwind_cols[0]:
-            if unwinding_data['call_unwinding']:
-                st.subheader("Call Unwinding")
-                for unwind in unwinding_data['call_unwinding'][:5]:
-                    st.markdown(f"""
-                    <div class="unwinding-alert">
-                        <strong>Strike {unwind['strike']:.0f}</strong><br>
-                        OI Change: {unwind['oi_change']:,.0f}
-                    </div>
-                    """, unsafe_allow_html=True)
-        
-        with unwind_cols[1]:
-            if unwinding_data['put_unwinding']:
-                st.subheader("Put Unwinding")
-                for unwind in unwinding_data['put_unwinding'][:5]:
-                    st.markdown(f"""
-                    <div class="unwinding-alert">
-                        <strong>Strike {unwind['strike']:.0f}</strong><br>
-                        OI Change: {unwind['oi_change']:,.0f}
-                    </div>
-                    """, unsafe_allow_html=True)
-
-def main():
-    # Auto-refresh every 5 seconds
-    st.sidebar.button("🔄 Refresh", key="refresh")
-    
-    uploaded_file = st.file_uploader("Upload F&O Excel Data", type=['xlsx', 'xlsm', 'xls'])
-    
-    if uploaded_file:
-        temp_path = f"temp_{uploaded_file.name}"
-        with open(temp_path, "wb") as f:
-            f.write(uploaded_file.getbuffer())
-        
-        # Silent data loading
-        data_dict = read_comprehensive_data(temp_path)
-        
-        try:
-            os.remove(temp_path)
-        except:
-            pass
-        
-        if data_dict:
-            display_live_dashboard(data_dict)
-            
-            # Auto refresh every 5 seconds
-            st.rerun()
-        else:
-            st.error("Unable to process data")
-    
-    else:
-        st.info("📁 Upload your F&O Excel file to start live analysis")
-
-if __name__ == "__main__":
-    main()
+                    <h3>NIFTY Options Analysis</h3>
+                    <table style="width:100%; color:white;">
+                    <tr><td>Max Call OI Strike:</td><td><strong>{nifty_oi['max_call_strike']:.0f}</strong></td></tr>
+                    <tr><td>Max Call OI:</td><td>{nifty_oi['max_call_oi']:,.0f}</td></tr>
+                    <tr><td>Max Put OI Strike:</td><td><strong>{nifty_oi['
