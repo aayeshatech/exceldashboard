@@ -257,7 +257,8 @@ def extract_comprehensive_pcr_data(data_dict):
                             'change_pct': (oi_change / previous_oi * 100) if previous_oi != 0 else 0
                         }
             
-            pcr_data['oi_analysis'] = oi_data
+            if oi_data:  # Only add oi_analysis if there's data
+                pcr_data['oi_analysis'] = oi_data
             
         except Exception as e:
             st.warning(f"Error extracting PCR data: {str(e)}")
@@ -672,7 +673,7 @@ def display_comprehensive_dashboard(data_dict):
             st.subheader("Open Interest Analysis")
             oi_analysis = pcr_data['oi_analysis']
             
-            # Check if there's any OI data to display
+            # Check if there's any OI data before creating columns
             if oi_analysis:
                 oi_cols = st.columns(min(4, len(oi_analysis)))
                 for i, (oi_name, oi_info) in enumerate(list(oi_analysis.items())[:4]):
@@ -689,7 +690,7 @@ def display_comprehensive_dashboard(data_dict):
                             </div>
                             """, unsafe_allow_html=True)
             else:
-                st.info("No OI analysis data available")
+                st.info("No OI data available")
     
     # Options Unwinding Analysis
     if any(unwinding_data.values()):
