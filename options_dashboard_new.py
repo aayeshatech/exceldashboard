@@ -101,6 +101,14 @@ st.markdown("""
     border-radius: 10px;
     margin: 1rem 0;
 }
+.no-data-message {
+    color: #6c757d;
+    font-style: italic;
+    padding: 1rem;
+    background-color: #f8f9fa;
+    border-radius: 5px;
+    margin: 1rem 0;
+}
 </style>
 """, unsafe_allow_html=True)
 
@@ -530,15 +538,15 @@ def display_comprehensive_dashboard(data_dict):
     # Trading Actions Section - Prominently displayed at the top
     st.header("🔥 Top Trading Actions")
     
-    if fo_stocks['trading_actions']:
-        # Create two columns for LONG and SHORT actions
-        long_actions = [action for action in fo_stocks['trading_actions'] if action['action'] == 'LONG']
-        short_actions = [action for action in fo_stocks['trading_actions'] if action['action'] == 'SHORT']
-        
-        action_cols = st.columns(2)
-        
-        with action_cols[0]:
-            st.subheader("🟢 LONG Positions")
+    # Create two columns for LONG and SHORT actions
+    long_actions = [action for action in fo_stocks['trading_actions'] if action['action'] == 'LONG']
+    short_actions = [action for action in fo_stocks['trading_actions'] if action['action'] == 'SHORT']
+    
+    action_cols = st.columns(2)
+    
+    with action_cols[0]:
+        st.subheader("🟢 LONG Positions")
+        if long_actions:
             for action in long_actions[:5]:  # Show top 5 long positions
                 st.markdown(f"""
                 <div class="action-card long-action">
@@ -548,9 +556,12 @@ def display_comprehensive_dashboard(data_dict):
                     <small>Confidence: {action['confidence']}</small>
                 </div>
                 """, unsafe_allow_html=True)
-        
-        with action_cols[1]:
-            st.subheader("🔴 SHORT Positions")
+        else:
+            st.markdown('<div class="no-data-message">No LONG positions identified at this time</div>', unsafe_allow_html=True)
+    
+    with action_cols[1]:
+        st.subheader("🔴 SHORT Positions")
+        if short_actions:
             for action in short_actions[:5]:  # Show top 5 short positions
                 st.markdown(f"""
                 <div class="action-card short-action">
@@ -560,187 +571,184 @@ def display_comprehensive_dashboard(data_dict):
                     <small>Confidence: {action['confidence']}</small>
                 </div>
                 """, unsafe_allow_html=True)
-    else:
-        st.info("No specific trading actions identified based on current data")
+        else:
+            st.markdown('<div class="no-data-message">No SHORT positions identified at this time</div>', unsafe_allow_html=True)
     
     # Nifty and BankNifty Analysis Section
-    if index_data['nifty'] or index_data['banknifty']:
-        st.header("📈 Index Options Analysis")
-        
-        index_cols = st.columns(2)
-        
-        # Nifty Analysis
-        with index_cols[0]:
-            if index_data['nifty']:
-                nifty = index_data['nifty']
-                interpretation = nifty['interpretation']
-                
-                st.markdown(f"""
-                <div class="index-card">
-                    <h3>NIFTY Analysis</h3>
-                    <p>Spot Price: {nifty['spot_price'] if nifty['spot_price'] else 'N/A'}</p>
-                    <p>PCR: {nifty['pcr']:.2f}</p>
-                    <p>Resistance: {nifty['resistance_strike'] if nifty['resistance_strike'] else 'N/A'}</p>
-                    <p>Support: {nifty['support_strike'] if nifty['support_strike'] else 'N/A'}</p>
-                    <p><strong>Signal: {interpretation['signal']}</strong></p>
-                    <p><strong>Action: {interpretation['action']}</strong></p>
-                    <p>Confidence: {interpretation['confidence']}</p>
-                </div>
-                """, unsafe_allow_html=True)
-                
-                # Show significant OI changes
-                if nifty['significant_changes']:
-                    st.subheader("Significant OI Changes")
-                    for change in nifty['significant_changes'][:5]:
-                        alert_class = "unwinding-alert" if change['oi_change'] < 0 else "buildup-alert"
-                        st.markdown(f"""
-                        <div class="{alert_class}">
-                            <strong>{change['type']} {change['strike']}</strong><br>
-                            OI Change: {change['oi_change']:+,.0f}<br>
-                            OI: {change['oi']:,.0f} | Price: ₹{change['price']:.2f}
-                        </div>
-                        """, unsafe_allow_html=True)
-            else:
-                st.info("No Nifty data available")
-        
-        # BankNifty Analysis
-        with index_cols[1]:
-            if index_data['banknifty']:
-                banknifty = index_data['banknifty']
-                interpretation = banknifty['interpretation']
-                
-                st.markdown(f"""
-                <div class="index-card">
-                    <h3>BANKNIFTY Analysis</h3>
-                    <p>Spot Price: {banknifty['spot_price'] if banknifty['spot_price'] else 'N/A'}</p>
-                    <p>PCR: {banknifty['pcr']:.2f}</p>
-                    <p>Resistance: {banknifty['resistance_strike'] if banknifty['resistance_strike'] else 'N/A'}</p>
-                    <p>Support: {banknifty['support_strike'] if banknifty['support_strike'] else 'N/A'}</p>
-                    <p><strong>Signal: {interpretation['signal']}</strong></p>
-                    <p><strong>Action: {interpretation['action']}</strong></p>
-                    <p>Confidence: {interpretation['confidence']}</p>
-                </div>
-                """, unsafe_allow_html=True)
-                
-                # Show significant OI changes
-                if banknifty['significant_changes']:
-                    st.subheader("Significant OI Changes")
-                    for change in banknifty['significant_changes'][:5]:
-                        alert_class = "unwinding-alert" if change['oi_change'] < 0 else "buildup-alert"
-                        st.markdown(f"""
-                        <div class="{alert_class}">
-                            <strong>{change['type']} {change['strike']}</strong><br>
-                            OI Change: {change['oi_change']:+,.0f}<br>
-                            OI: {change['oi']:,.0f} | Price: ₹{change['price']:.2f}
-                        </div>
-                        """, unsafe_allow_html=True)
-            else:
-                st.info("No BankNifty data available")
+    st.header("📈 Index Options Analysis")
+    
+    index_cols = st.columns(2)
+    
+    # Nifty Analysis
+    with index_cols[0]:
+        if index_data['nifty']:
+            nifty = index_data['nifty']
+            interpretation = nifty['interpretation']
+            
+            st.markdown(f"""
+            <div class="index-card">
+                <h3>NIFTY Analysis</h3>
+                <p>Spot Price: {nifty['spot_price'] if nifty['spot_price'] else 'N/A'}</p>
+                <p>PCR: {nifty['pcr']:.2f}</p>
+                <p>Resistance: {nifty['resistance_strike'] if nifty['resistance_strike'] else 'N/A'}</p>
+                <p>Support: {nifty['support_strike'] if nifty['support_strike'] else 'N/A'}</p>
+                <p><strong>Signal: {interpretation['signal']}</strong></p>
+                <p><strong>Action: {interpretation['action']}</strong></p>
+                <p>Confidence: {interpretation['confidence']}</p>
+            </div>
+            """, unsafe_allow_html=True)
+            
+            # Show significant OI changes
+            if nifty['significant_changes']:
+                st.subheader("Significant OI Changes")
+                for change in nifty['significant_changes'][:5]:
+                    alert_class = "unwinding-alert" if change['oi_change'] < 0 else "buildup-alert"
+                    st.markdown(f"""
+                    <div class="{alert_class}">
+                        <strong>{change['type']} {change['strike']}</strong><br>
+                        OI Change: {change['oi_change']:+,.0f}<br>
+                        OI: {change['oi']:,.0f} | Price: ₹{change['price']:.2f}
+                    </div>
+                    """, unsafe_allow_html=True)
+        else:
+            st.markdown('<div class="no-data-message">No Nifty data available in the uploaded file</div>', unsafe_allow_html=True)
+    
+    # BankNifty Analysis
+    with index_cols[1]:
+        if index_data['banknifty']:
+            banknifty = index_data['banknifty']
+            interpretation = banknifty['interpretation']
+            
+            st.markdown(f"""
+            <div class="index-card">
+                <h3>BANKNIFTY Analysis</h3>
+                <p>Spot Price: {banknifty['spot_price'] if banknifty['spot_price'] else 'N/A'}</p>
+                <p>PCR: {banknifty['pcr']:.2f}</p>
+                <p>Resistance: {banknifty['resistance_strike'] if banknifty['resistance_strike'] else 'N/A'}</p>
+                <p>Support: {banknifty['support_strike'] if banknifty['support_strike'] else 'N/A'}</p>
+                <p><strong>Signal: {interpretation['signal']}</strong></p>
+                <p><strong>Action: {interpretation['action']}</strong></p>
+                <p>Confidence: {interpretation['confidence']}</p>
+            </div>
+            """, unsafe_allow_html=True)
+            
+            # Show significant OI changes
+            if banknifty['significant_changes']:
+                st.subheader("Significant OI Changes")
+                for change in banknifty['significant_changes'][:5]:
+                    alert_class = "unwinding-alert" if change['oi_change'] < 0 else "buildup-alert"
+                    st.markdown(f"""
+                    <div class="{alert_class}">
+                        <strong>{change['type']} {change['strike']}</strong><br>
+                        OI Change: {change['oi_change']:+,.0f}<br>
+                        OI: {change['oi']:,.0f} | Price: ₹{change['price']:.2f}
+                    </div>
+                    """, unsafe_allow_html=True)
+        else:
+            st.markdown('<div class="no-data-message">No BankNifty data available in the uploaded file</div>', unsafe_allow_html=True)
     
     # PCR Analysis Section
-    if pcr_data:
-        st.header("PCR & Options Analysis")
+    st.header("PCR & Options Analysis")
+    
+    # Get PCR items excluding 'oi_analysis'
+    pcr_items = [k for k in pcr_data.keys() if k != 'oi_analysis']
+    
+    if pcr_items:
+        pcr_cols = st.columns(len(pcr_items))
+        col_idx = 0
         
-        # Get PCR items excluding 'oi_analysis'
-        pcr_items = [k for k in pcr_data.keys() if k != 'oi_analysis']
-        
-        if pcr_items:
-            pcr_cols = st.columns(len(pcr_items))
-            col_idx = 0
+        for pcr_name in pcr_items:
+            pcr_info = pcr_data[pcr_name]
+            interpretation = pcr_info['interpretation']
+            signal = interpretation['signal']
             
-            for pcr_name in pcr_items:
-                pcr_info = pcr_data[pcr_name]
-                interpretation = pcr_info['interpretation']
-                signal = interpretation['signal']
-                
-                with pcr_cols[col_idx]:
-                    st.markdown(f"""
-                    <div class="pcr-analysis">
-                        <h4>{pcr_name}</h4>
-                        <h2>{pcr_info['value']:.3f}</h2>
-                        <p><strong>{signal}</strong></p>
-                        <p>{interpretation['action']}</p>
-                        <small>Confidence: {interpretation['confidence']}</small>
-                    </div>
-                    """, unsafe_allow_html=True)
-                
-                col_idx += 1
-        else:
-            st.info("No PCR data available")
-        
-        # OI Analysis
-        if 'oi_analysis' in pcr_data and pcr_data['oi_analysis']:
-            st.subheader("Open Interest Analysis")
-            oi_analysis = pcr_data['oi_analysis']
+            with pcr_cols[col_idx]:
+                st.markdown(f"""
+                <div class="pcr-analysis">
+                    <h4>{pcr_name}</h4>
+                    <h2>{pcr_info['value']:.3f}</h2>
+                    <p><strong>{signal}</strong></p>
+                    <p>{interpretation['action']}</p>
+                    <small>Confidence: {interpretation['confidence']}</small>
+                </div>
+                """, unsafe_allow_html=True)
             
-            # Check if there's any OI data before creating columns
-            if oi_analysis:
-                oi_cols = st.columns(min(4, len(oi_analysis)))
-                for i, (oi_name, oi_info) in enumerate(list(oi_analysis.items())[:4]):
-                    with oi_cols[i]:
-                        change_pct = oi_info['change_pct']
-                        if abs(change_pct) > 5:
-                            alert_class = "unwinding-alert" if change_pct < 0 else "buildup-alert"
-                            st.markdown(f"""
-                            <div class="{alert_class}">
-                                <strong>{oi_name}</strong><br>
-                                Current: {oi_info['current']:,.0f}<br>
-                                Change: {oi_info['change']:+,.0f}<br>
-                                Change %: {change_pct:+.2f}%
-                            </div>
-                            """, unsafe_allow_html=True)
-            else:
-                st.info("No OI data available")
+            col_idx += 1
+    else:
+        st.markdown('<div class="no-data-message">No PCR data available in the uploaded file</div>', unsafe_allow_html=True)
+    
+    # OI Analysis
+    st.subheader("Open Interest Analysis")
+    if 'oi_analysis' in pcr_data and pcr_data['oi_analysis']:
+        oi_analysis = pcr_data['oi_analysis']
+        
+        # Check if there's any OI data before creating columns
+        if oi_analysis:
+            oi_cols = st.columns(min(4, len(oi_analysis)))
+            for i, (oi_name, oi_info) in enumerate(list(oi_analysis.items())[:4]):
+                with oi_cols[i]:
+                    change_pct = oi_info['change_pct']
+                    if abs(change_pct) > 5:
+                        alert_class = "unwinding-alert" if change_pct < 0 else "buildup-alert"
+                        st.markdown(f"""
+                        <div class="{alert_class}">
+                            <strong>{oi_name}</strong><br>
+                            Current: {oi_info['current']:,.0f}<br>
+                            Change: {oi_info['change']:+,.0f}<br>
+                            Change %: {change_pct:+.2f}%
+                        </div>
+                        """, unsafe_allow_html=True)
+    else:
+        st.markdown('<div class="no-data-message">No Open Interest data available in the uploaded file</div>', unsafe_allow_html=True)
     
     # Options Unwinding Analysis
-    if any(unwinding_data.values()):
-        st.header("Options Unwinding & Fresh Positions")
-        
-        unwind_tabs = st.tabs(['Call Unwinding', 'Put Unwinding', 'Fresh Positions'])
-        
-        with unwind_tabs[0]:
-            call_unwinding = unwinding_data['call_unwinding']
-            if call_unwinding:
-                st.subheader(f"Call Unwinding Detected ({len(call_unwinding)} strikes)")
-                for unwind in call_unwinding:
-                    st.markdown(f"""
-                    <div class="unwinding-alert">
-                        <strong>Strike {unwind['strike']:.0f}</strong> - 
-                        OI Change: {unwind['oi_change']:,.0f} - 
-                        Price: ₹{unwind['price']:.2f}
-                    </div>
-                    """, unsafe_allow_html=True)
-            else:
-                st.info("No significant call unwinding detected")
-        
-        with unwind_tabs[1]:
-            put_unwinding = unwinding_data['put_unwinding']
-            if put_unwinding:
-                st.subheader(f"Put Unwinding Detected ({len(put_unwinding)} strikes)")
-                for unwind in put_unwinding:
-                    st.markdown(f"""
-                    <div class="unwinding-alert">
-                        <strong>Strike {unwind['strike']:.0f}</strong> - 
-                        OI Change: {unwind['oi_change']:,.0f} - 
-                        Price: ₹{unwind['price']:.2f}
-                    </div>
-                    """, unsafe_allow_html=True)
-            else:
-                st.info("No significant put unwinding detected")
-        
-        with unwind_tabs[2]:
-            fresh_positions = unwinding_data['fresh_positions']
-            if fresh_positions:
-                st.subheader(f"Fresh Positions Built ({len(fresh_positions)} strikes)")
-                for position in fresh_positions:
-                    st.markdown(f"""
-                    <div class="buildup-alert">
-                        <strong>{position['type']} Strike {position['strike']:.0f}</strong> - 
-                        Fresh OI: +{position['oi_change']:,.0f}
-                    </div>
-                    """, unsafe_allow_html=True)
-            else:
-                st.info("No significant fresh positions detected")
+    st.header("Options Unwinding & Fresh Positions")
+    
+    unwind_tabs = st.tabs(['Call Unwinding', 'Put Unwinding', 'Fresh Positions'])
+    
+    with unwind_tabs[0]:
+        call_unwinding = unwinding_data['call_unwinding']
+        if call_unwinding:
+            st.subheader(f"Call Unwinding Detected ({len(call_unwinding)} strikes)")
+            for unwind in call_unwinding:
+                st.markdown(f"""
+                <div class="unwinding-alert">
+                    <strong>Strike {unwind['strike']:.0f}</strong> - 
+                    OI Change: {unwind['oi_change']:,.0f} - 
+                    Price: ₹{unwind['price']:.2f}
+                </div>
+                """, unsafe_allow_html=True)
+        else:
+            st.markdown('<div class="no-data-message">No significant call unwinding detected</div>', unsafe_allow_html=True)
+    
+    with unwind_tabs[1]:
+        put_unwinding = unwinding_data['put_unwinding']
+        if put_unwinding:
+            st.subheader(f"Put Unwinding Detected ({len(put_unwinding)} strikes)")
+            for unwind in put_unwinding:
+                st.markdown(f"""
+                <div class="unwinding-alert">
+                    <strong>Strike {unwind['strike']:.0f}</strong> - 
+                    OI Change: {unwind['oi_change']:,.0f} - 
+                    Price: ₹{unwind['price']:.2f}
+                </div>
+                """, unsafe_allow_html=True)
+        else:
+            st.markdown('<div class="no-data-message">No significant put unwinding detected</div>', unsafe_allow_html=True)
+    
+    with unwind_tabs[2]:
+        fresh_positions = unwinding_data['fresh_positions']
+        if fresh_positions:
+            st.subheader(f"Fresh Positions Built ({len(fresh_positions)} strikes)")
+            for position in fresh_positions:
+                st.markdown(f"""
+                <div class="buildup-alert">
+                    <strong>{position['type']} Strike {position['strike']:.0f}</strong> - 
+                    Fresh OI: +{position['oi_change']:,.0f}
+                </div>
+                """, unsafe_allow_html=True)
+        else:
+            st.markdown('<div class="no-data-message">No significant fresh positions detected</div>', unsafe_allow_html=True)
     
     # F&O Stocks Analysis
     st.header("F&O Stocks Analysis")
@@ -770,7 +778,7 @@ def display_comprehensive_dashboard(data_dict):
                     </div>
                     """, unsafe_allow_html=True)
         else:
-            st.info("No bullish F&O stocks identified with current thresholds")
+            st.markdown('<div class="no-data-message">No bullish F&O stocks identified with current thresholds</div>', unsafe_allow_html=True)
     
     with stock_tabs[1]:
         bearish_stocks = fo_stocks['bearish']
@@ -795,7 +803,7 @@ def display_comprehensive_dashboard(data_dict):
                     </div>
                     """, unsafe_allow_html=True)
         else:
-            st.info("No bearish F&O stocks identified with current thresholds")
+            st.markdown('<div class="no-data-message">No bearish F&O stocks identified with current thresholds</div>', unsafe_allow_html=True)
     
     with stock_tabs[2]:
         # Summary metrics
