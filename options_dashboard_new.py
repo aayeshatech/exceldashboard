@@ -1,172 +1,126 @@
 import pandas as pd
 import streamlit as st
 import numpy as np
-from datetime import datetime
-import os
+from datetime import datetime, timedelta
 import time
+import os
 
-st.set_page_config(page_title="Professional Trading Dashboard", page_icon="⚡", layout="wide")
+st.set_page_config(page_title="Live Trading Alerts", page_icon="🚨", layout="wide")
 
-# Professional trading CSS
+# Live trading CSS with alerts
 st.markdown("""
 <style>
-.trading-header {
-    background: linear-gradient(90deg, #1e3c72 0%, #2a5298 100%);
+.alert-header {
+    background: linear-gradient(90deg, #ff6b6b 0%, #feca57 100%);
     color: white;
     padding: 1rem;
     border-radius: 8px;
     text-align: center;
-    margin-bottom: 2rem;
+    margin-bottom: 1rem;
+    animation: pulse 2s infinite;
 }
-.strategy-card {
+@keyframes pulse {
+    0% { opacity: 1; }
+    50% { opacity: 0.7; }
+    100% { opacity: 1; }
+}
+.long-alert {
+    background: linear-gradient(135deg, #2ecc71, #27ae60);
+    color: white;
+    padding: 1rem;
+    border-radius: 8px;
+    margin: 0.5rem 0;
+    border-left: 5px solid #1abc9c;
+    animation: slideIn 0.5s ease-in;
+}
+.short-alert {
+    background: linear-gradient(135deg, #e74c3c, #c0392b);
+    color: white;
+    padding: 1rem;
+    border-radius: 8px;
+    margin: 0.5rem 0;
+    border-left: 5px solid #e67e22;
+    animation: slideIn 0.5s ease-in;
+}
+@keyframes slideIn {
+    from { transform: translateX(-100%); }
+    to { transform: translateX(0); }
+}
+.pcr-alert {
+    background: linear-gradient(135deg, #9b59b6, #8e44ad);
+    color: white;
+    padding: 1rem;
+    border-radius: 8px;
+    margin: 0.5rem 0;
+    text-align: center;
+}
+.support-resistance {
+    background: #f8f9fa;
     border: 2px solid #007bff;
-    border-radius: 10px;
-    padding: 1.5rem;
-    margin: 1rem 0;
-    background: linear-gradient(135deg, #f8f9fa 0%, #e9ecef 100%);
-}
-.buy-signal {
-    background: linear-gradient(135deg, #28a745 0%, #20c997 100%);
-    color: white;
     padding: 1rem;
     border-radius: 8px;
-    margin: 0.5rem 0;
-    border-left: 5px solid #155724;
-}
-.sell-signal {
-    background: linear-gradient(135deg, #dc3545 0%, #fd7e14 100%);
-    color: white;
-    padding: 1rem;
-    border-radius: 8px;
-    margin: 0.5rem 0;
-    border-left: 5px solid #721c24;
-}
-.neutral-signal {
-    background: linear-gradient(135deg, #6c757d 0%, #adb5bd 100%);
-    color: white;
-    padding: 1rem;
-    border-radius: 8px;
-    margin: 0.5rem 0;
-}
-.pcr-bullish { background: #d4edda; color: #155724; padding: 0.5rem; border-radius: 5px; }
-.pcr-bearish { background: #f8d7da; color: #721c24; padding: 0.5rem; border-radius: 5px; }
-.pcr-neutral { background: #fff3cd; color: #856404; padding: 0.5rem; border-radius: 5px; }
-.metrics-grid {
-    display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
-    gap: 1rem;
     margin: 1rem 0;
 }
-.signal-container {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 1rem;
-    margin-bottom: 2rem;
-}
-.signal-card {
-    flex: 1;
-    min-width: 300px;
+.live-data {
+    background: #1a1a1a;
+    color: #00ff00;
+    font-family: 'Courier New', monospace;
     padding: 1rem;
     border-radius: 8px;
-    box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+    margin: 1rem 0;
 }
-.refresh-info {
-    position: fixed;
-    bottom: 10px;
-    right: 10px;
-    background: rgba(0,0,0,0.7);
-    color: white;
-    padding: 5px 10px;
+.metric-alert {
+    padding: 0.5rem;
     border-radius: 5px;
-    font-size: 0.8rem;
+    margin: 0.2rem 0;
+    font-weight: bold;
 }
+.bullish { background: #d4edda; color: #155724; }
+.bearish { background: #f8d7da; color: #721c24; }
+.neutral { background: #fff3cd; color: #856404; }
 </style>
 """, unsafe_allow_html=True)
 
-def read_all_trading_sheets(file_path):
-    """Read all trading-relevant sheets from Excel"""
+# Session state for auto-refresh
+if 'last_refresh' not in st.session_state:
+    st.session_state.last_refresh = datetime.now()
+if 'refresh_count' not in st.session_state:
+    st.session_state.refresh_count = 0
+if 'previous_data' not in st.session_state:
+    st.session_state.previous_data = {}
+if 'alerts_history' not in st.session_state:
+    st.session_state.alerts_history = []
+
+def read_trading_data(file_path):
+    """Read trading data with error handling"""
     try:
         excel_file = pd.ExcelFile(file_path)
         data_dict = {}
         
-        # Read all available sheets
-        for sheet_name in excel_file.sheet_names:
-            try:
-                df = pd.read_excel(file_path, sheet_name=sheet_name)
-                if not df.empty:
-                    data_dict[sheet_name] = df
-                    st.info(f"Loaded {sheet_name}: {len(df)} rows, {len(df.columns)} cols")
-            except Exception as e:
-                st.warning(f"Skipped {sheet_name}: {str(e)}")
+        priority_sheets = [
+            'Dashboard', 'Stock Dashboard', 'PCR & OI Chart', 
+            'Sector Dashboard', 'Screener'
+        ]
+        
+        for sheet_name in priority_sheets:
+            if sheet_name in excel_file.sheet_names:
+                try:
+                    df = pd.read_excel(file_path, sheet_name=sheet_name)
+                    if not df.empty:
+                        data_dict[sheet_name] = df
+                except Exception as e:
+                    st.warning(f"Could not read {sheet_name}: {str(e)}")
         
         return data_dict
     except Exception as e:
         st.error(f"Error reading Excel: {str(e)}")
         return {}
 
-def extract_buy_sell_signals(data_dict):
-    """Extract best buy and sell signals from all sheets"""
-    buy_signals = []
-    sell_signals = []
+def analyze_pcr_alerts(pcr_df):
+    """Generate PCR-based alerts"""
+    alerts = []
     
     try:
-        for sheet_name, df in data_dict.items():
-            # Find signal columns
-            signal_cols = [col for col in df.columns if any(term in str(col).upper() for term in ['SIGNAL', 'RECOMMENDATION', 'ACTION', 'BUY/SELL'])]
-            symbol_cols = [col for col in df.columns if any(term in str(col).upper() for term in ['SYMBOL', 'STOCK', 'NAME'])]
-            
-            if not signal_cols or not symbol_cols:
-                continue
-                
-            signal_col = signal_cols[0]
-            symbol_col = symbol_cols[0]
-            
-            # Find additional relevant columns
-            price_cols = [col for col in df.columns if any(term in str(col).upper() for term in ['PRICE', 'LTP', 'CLOSE'])]
-            target_cols = [col for col in df.columns if any(term in str(col).upper() for term in ['TARGET', 'OBJ'])]
-            sl_cols = [col for col in df.columns if any(term in str(col).upper() for term in ['STOP LOSS', 'SL'])]
-            
-            for _, row in df.iterrows():
-                signal_val = str(row[signal_col]).upper()
-                symbol = row[symbol_col]
-                
-                # Extract additional data if available
-                price = row[price_cols[0]] if price_cols else None
-                target = row[target_cols[0]] if target_cols else None
-                stop_loss = row[sl_cols[0]] if sl_cols else None
-                
-                if 'BUY' in signal_val:
-                    buy_signals.append({
-                        'symbol': symbol,
-                        'source': sheet_name,
-                        'price': price,
-                        'target': target,
-                        'stop_loss': stop_loss
-                    })
-                elif 'SELL' in signal_val:
-                    sell_signals.append({
-                        'symbol': symbol,
-                        'source': sheet_name,
-                        'price': price,
-                        'target': target,
-                        'stop_loss': stop_loss
-                    })
-        
-        # Sort by price if available, otherwise by symbol
-        buy_signals = sorted(buy_signals, key=lambda x: (x['price'] is not None, x['price']), reverse=True)[:10]
-        sell_signals = sorted(sell_signals, key=lambda x: (x['price'] is not None, x['price']), reverse=True)[:10]
-        
-        return buy_signals, sell_signals
-    except Exception as e:
-        st.warning(f"Buy/Sell signal extraction error: {e}")
-        return [], []
-
-def extract_pcr_strategy(pcr_df):
-    """Extract PCR-based trading strategy"""
-    pcr_strategy = {}
-    
-    try:
-        # Look for PCR values
         for col in pcr_df.columns:
             if 'PCR' in str(col).upper():
                 pcr_values = pd.to_numeric(pcr_df[col], errors='coerce').dropna()
@@ -174,484 +128,402 @@ def extract_pcr_strategy(pcr_df):
                     current_pcr = pcr_values.iloc[-1]
                     
                     if current_pcr > 1.5:
-                        signal = "STRONG_BEARISH"
-                        strategy = "Consider PUT buying or short positions"
-                        confidence = "HIGH"
+                        alerts.append({
+                            'type': 'PCR_BEARISH',
+                            'message': f'STRONG BEARISH SIGNAL - {col}: {current_pcr:.3f}',
+                            'action': 'Consider PUT buying or short positions',
+                            'priority': 'HIGH'
+                        })
                     elif current_pcr > 1.2:
-                        signal = "BEARISH"
-                        strategy = "Bias towards PUT positions"
-                        confidence = "MEDIUM"
+                        alerts.append({
+                            'type': 'PCR_BEARISH',
+                            'message': f'Bearish bias - {col}: {current_pcr:.3f}',
+                            'action': 'Bias towards PUT positions',
+                            'priority': 'MEDIUM'
+                        })
                     elif current_pcr < 0.6:
-                        signal = "STRONG_BULLISH"
-                        strategy = "Consider CALL buying or long positions"
-                        confidence = "HIGH"
+                        alerts.append({
+                            'type': 'PCR_BULLISH',
+                            'message': f'STRONG BULLISH SIGNAL - {col}: {current_pcr:.3f}',
+                            'action': 'Consider CALL buying or long positions',
+                            'priority': 'HIGH'
+                        })
                     elif current_pcr < 0.8:
-                        signal = "BULLISH"
-                        strategy = "Bias towards CALL positions"
-                        confidence = "MEDIUM"
-                    else:
-                        signal = "NEUTRAL"
-                        strategy = "Range-bound trading or straddle"
-                        confidence = "LOW"
-                    
-                    pcr_strategy[col] = {
-                        'value': current_pcr,
-                        'signal': signal,
-                        'strategy': strategy,
-                        'confidence': confidence
-                    }
+                        alerts.append({
+                            'type': 'PCR_BULLISH',
+                            'message': f'Bullish bias - {col}: {current_pcr:.3f}',
+                            'action': 'Bias towards CALL positions',
+                            'priority': 'MEDIUM'
+                        })
         
-        return pcr_strategy
+        return alerts
     except Exception as e:
         st.warning(f"PCR analysis error: {e}")
-        return {}
-
-def extract_stock_strategies(dashboard_df):
-    """Extract stock trading strategies from dashboard"""
-    strategies = {
-        'long_candidates': [],
-        'short_candidates': [],
-        'breakout_stocks': [],
-        'high_volume_plays': []
-    }
-    
-    try:
-        # Find relevant columns
-        symbol_cols = [col for col in dashboard_df.columns if any(term in str(col).upper() for term in ['SYMBOL', 'STOCK', 'NAME'])]
-        change_cols = [col for col in dashboard_df.columns if any(term in str(col).upper() for term in ['CHANGE', '%'])]
-        volume_cols = [col for col in dashboard_df.columns if 'VOLUME' in str(col).upper()]
-        ltp_cols = [col for col in dashboard_df.columns if 'LTP' in str(col).upper()]
-        
-        if not symbol_cols or not change_cols:
-            return strategies
-        
-        symbol_col = symbol_cols[0]
-        change_col = change_cols[0]
-        
-        # Clean data
-        analysis_df = dashboard_df[[symbol_col, change_col]].copy()
-        if volume_cols:
-            analysis_df['Volume'] = pd.to_numeric(dashboard_df[volume_cols[0]], errors='coerce')
-        if ltp_cols:
-            analysis_df['LTP'] = pd.to_numeric(dashboard_df[ltp_cols[0]], errors='coerce')
-        
-        analysis_df[change_col] = pd.to_numeric(analysis_df[change_col], errors='coerce')
-        analysis_df = analysis_df.dropna()
-        
-        # Strategy classification
-        for _, row in analysis_df.iterrows():
-            symbol = row[symbol_col]
-            change = row[change_col]
-            volume = row.get('Volume', 0)
-            ltp = row.get('LTP', 0)
-            
-            # Long candidates (strong bullish momentum)
-            if change > 3:
-                strategies['long_candidates'].append({
-                    'symbol': symbol,
-                    'change': change,
-                    'volume': volume,
-                    'ltp': ltp,
-                    'strategy': f"LONG at {ltp:.2f}, Target: {ltp * 1.05:.2f}, SL: {ltp * 0.97:.2f}"
-                })
-            
-            # Short candidates (strong bearish momentum)
-            elif change < -3:
-                strategies['short_candidates'].append({
-                    'symbol': symbol,
-                    'change': change,
-                    'volume': volume,
-                    'ltp': ltp,
-                    'strategy': f"SHORT at {ltp:.2f}, Target: {ltp * 0.95:.2f}, SL: {ltp * 1.03:.2f}"
-                })
-            
-            # Breakout stocks (moderate momentum with volume)
-            elif 1.5 < abs(change) < 3 and volume > 100000:
-                strategies['breakout_stocks'].append({
-                    'symbol': symbol,
-                    'change': change,
-                    'volume': volume,
-                    'ltp': ltp,
-                    'strategy': f"BREAKOUT play - Watch for continuation"
-                })
-            
-            # High volume plays
-            if volume > 500000:
-                strategies['high_volume_plays'].append({
-                    'symbol': symbol,
-                    'change': change,
-                    'volume': volume,
-                    'ltp': ltp
-                })
-        
-        # Sort by performance
-        for strategy_type in ['long_candidates', 'short_candidates']:
-            strategies[strategy_type] = sorted(
-                strategies[strategy_type], 
-                key=lambda x: abs(x['change']), 
-                reverse=True
-            )[:10]
-        
-        return strategies
-    
-    except Exception as e:
-        st.warning(f"Stock strategy analysis error: {e}")
-        return strategies
-
-def extract_sector_strategies(sector_df):
-    """Extract sector-wise trading strategies"""
-    sector_strategies = {}
-    
-    try:
-        # Find sector columns
-        sector_cols = [col for col in sector_df.columns if 'SECTOR' in str(col).upper()]
-        change_cols = [col for col in sector_df.columns if any(term in str(col).upper() for term in ['CHANGE', '%'])]
-        
-        if not sector_cols or not change_cols:
-            return sector_strategies
-        
-        sector_col = sector_cols[0]
-        change_col = change_cols[0]
-        
-        # Group by sector
-        sector_performance = sector_df.groupby(sector_col)[change_col].mean().sort_values(ascending=False)
-        
-        for sector, avg_change in sector_performance.items():
-            if avg_change > 2:
-                signal = "SECTOR_ROTATION_BUY"
-                strategy = f"Rotate INTO {sector} - Strong outperformance"
-                confidence = "HIGH"
-            elif avg_change > 1:
-                signal = "SECTOR_OVERWEIGHT"
-                strategy = f"Overweight {sector} positions"
-                confidence = "MEDIUM"
-            elif avg_change < -2:
-                signal = "SECTOR_ROTATION_SELL"
-                strategy = f"Rotate OUT OF {sector} - Underperforming"
-                confidence = "HIGH"
-            elif avg_change < -1:
-                signal = "SECTOR_UNDERWEIGHT"
-                strategy = f"Underweight {sector} positions"
-                confidence = "MEDIUM"
-            else:
-                signal = "SECTOR_NEUTRAL"
-                strategy = f"Maintain neutral {sector} allocation"
-                confidence = "LOW"
-            
-            sector_strategies[sector] = {
-                'performance': avg_change,
-                'signal': signal,
-                'strategy': strategy,
-                'confidence': confidence
-            }
-        
-        return sector_strategies
-    
-    except Exception as e:
-        st.warning(f"Sector strategy analysis error: {e}")
-        return {}
-
-def extract_screener_opportunities(screener_df):
-    """Extract opportunities from screener data"""
-    opportunities = []
-    
-    try:
-        # Look for key screening criteria
-        symbol_cols = [col for col in screener_df.columns if any(term in str(col).upper() for term in ['SYMBOL', 'STOCK'])]
-        if not symbol_cols:
-            return opportunities
-        
-        symbol_col = symbol_cols[0]
-        
-        # Add all screened stocks as opportunities
-        for _, row in screener_df.iterrows():
-            symbol = row[symbol_col]
-            opportunity = {'symbol': symbol}
-            
-            # Add all available metrics
-            for col in screener_df.columns:
-                if col != symbol_col:
-                    opportunity[col] = row[col]
-            
-            opportunities.append(opportunity)
-        
-        return opportunities[:20]  # Top 20 opportunities
-    
-    except Exception as e:
-        st.warning(f"Screener analysis error: {e}")
         return []
 
-def display_professional_dashboard(data_dict):
-    """Display professional trading dashboard"""
+def analyze_stock_alerts(stock_df):
+    """Generate stock trading alerts"""
+    alerts = []
     
-    st.markdown("""
-    <div class="trading-header">
-        <h1>Professional Trading Strategy Dashboard</h1>
-        <p>Data-Driven Trading Decisions | Live Market Analysis</p>
-    </div>
-    """, unsafe_allow_html=True)
-    
-    # Extract buy/sell signals first
-    buy_signals, sell_signals = extract_buy_sell_signals(data_dict)
-    
-    # Display buy/sell signals prominently
-    st.header("Top Trading Signals")
-    
-    if buy_signals or sell_signals:
-        col1, col2 = st.columns(2)
+    try:
+        symbol_cols = [col for col in stock_df.columns if any(term in str(col).upper() for term in ['SYMBOL', 'STOCK', 'NAME'])]
+        change_cols = [col for col in stock_df.columns if any(term in str(col).upper() for term in ['CHANGE', '%'])]
+        volume_cols = [col for col in stock_df.columns if 'VOLUME' in str(col).upper()]
         
-        with col1:
-            st.subheader("🟢 BUY Signals")
-            if buy_signals:
-                for signal in buy_signals[:5]:  # Show top 5
-                    st.markdown(f"""
-                    <div class="buy-signal">
-                        <strong>{signal['symbol']}</strong> from {signal['source']}<br>
-                        Price: {signal['price'] if signal['price'] is not None else 'N/A'}<br>
-                        Target: {signal['target'] if signal['target'] is not None else 'N/A'}<br>
-                        Stop Loss: {signal['stop_loss'] if signal['stop_loss'] is not None else 'N/A'}
-                    </div>
-                    """, unsafe_allow_html=True)
-            else:
-                st.info("No BUY signals found")
+        if not symbol_cols or not change_cols:
+            return alerts
         
-        with col2:
-            st.subheader("🔴 SELL Signals")
-            if sell_signals:
-                for signal in sell_signals[:5]:  # Show top 5
-                    st.markdown(f"""
-                    <div class="sell-signal">
-                        <strong>{signal['symbol']}</strong> from {signal['source']}<br>
-                        Price: {signal['price'] if signal['price'] is not None else 'N/A'}<br>
-                        Target: {signal['target'] if signal['target'] is not None else 'N/A'}<br>
-                        Stop Loss: {signal['stop_loss'] if signal['stop_loss'] is not None else 'N/A'}
-                    </div>
-                    """, unsafe_allow_html=True)
-            else:
-                st.info("No SELL signals found")
-    else:
-        st.info("No buy/sell signals found in the uploaded data")
-    
-    # Extract strategies from different sheets
-    pcr_strategy = {}
-    stock_strategies = {}
-    sector_strategies = {}
-    screener_opportunities = []
-    
-    if 'PCR & OI Chart' in data_dict:
-        pcr_strategy = extract_pcr_strategy(data_dict['PCR & OI Chart'])
-    
-    if 'Dashboard' in data_dict or 'Stock Dashboard' in data_dict:
-        dashboard_data = data_dict.get('Stock Dashboard', data_dict.get('Dashboard'))
-        stock_strategies = extract_stock_strategies(dashboard_data)
-    
-    if 'Sector Dashboard' in data_dict:
-        sector_strategies = extract_sector_strategies(data_dict['Sector Dashboard'])
-    
-    if 'Screener' in data_dict:
-        screener_opportunities = extract_screener_opportunities(data_dict['Screener'])
-    
-    # PCR Strategy Section
-    if pcr_strategy:
-        st.header("Options Market Strategy")
+        symbol_col = symbol_cols[0]
+        change_col = change_cols[0]
         
-        for pcr_name, pcr_data in pcr_strategy.items():
-            signal = pcr_data['signal']
+        df_clean = stock_df[[symbol_col, change_col]].copy()
+        df_clean[change_col] = pd.to_numeric(df_clean[change_col], errors='coerce')
+        df_clean = df_clean.dropna()
+        
+        # Strong long alerts (>5% gain)
+        strong_longs = df_clean[df_clean[change_col] > 5].nlargest(10, change_col)
+        for _, row in strong_longs.iterrows():
+            alerts.append({
+                'type': 'LONG',
+                'symbol': row[symbol_col],
+                'change': row[change_col],
+                'message': f'STRONG LONG SIGNAL - {row[symbol_col]} +{row[change_col]:.2f}%',
+                'action': 'Consider long position with tight stop loss',
+                'priority': 'HIGH'
+            })
+        
+        # Strong short alerts (<-5% decline)
+        strong_shorts = df_clean[df_clean[change_col] < -5].nsmallest(10, change_col)
+        for _, row in strong_shorts.iterrows():
+            alerts.append({
+                'type': 'SHORT',
+                'symbol': row[symbol_col],
+                'change': row[change_col],
+                'message': f'STRONG SHORT SIGNAL - {row[symbol_col]} {row[change_col]:.2f}%',
+                'action': 'Consider short position or PUT options',
+                'priority': 'HIGH'
+            })
+        
+        # Medium alerts (2-5% moves)
+        medium_longs = df_clean[(df_clean[change_col] > 2) & (df_clean[change_col] <= 5)].nlargest(5, change_col)
+        for _, row in medium_longs.iterrows():
+            alerts.append({
+                'type': 'LONG',
+                'symbol': row[symbol_col],
+                'change': row[change_col],
+                'message': f'Long opportunity - {row[symbol_col]} +{row[change_col]:.2f}%',
+                'action': 'Monitor for continuation',
+                'priority': 'MEDIUM'
+            })
+        
+        medium_shorts = df_clean[(df_clean[change_col] < -2) & (df_clean[change_col] >= -5)].nsmallest(5, change_col)
+        for _, row in medium_shorts.iterrows():
+            alerts.append({
+                'type': 'SHORT',
+                'symbol': row[symbol_col],
+                'change': row[change_col],
+                'message': f'Short opportunity - {row[symbol_col]} {row[change_col]:.2f}%',
+                'action': 'Monitor for further decline',
+                'priority': 'MEDIUM'
+            })
+        
+        return alerts
+    
+    except Exception as e:
+        st.warning(f"Stock alerts error: {e}")
+        return []
+
+def detect_data_changes(current_data, previous_data):
+    """Detect significant changes in data"""
+    change_alerts = []
+    
+    try:
+        if not previous_data:
+            return change_alerts
+        
+        # Check for new strong movers
+        for sheet_name in current_data:
+            if sheet_name in previous_data:
+                current_df = current_data[sheet_name]
+                previous_df = previous_data[sheet_name]
+                
+                # Look for significant changes in key metrics
+                if 'PCR' in sheet_name.upper():
+                    # PCR changes
+                    for col in current_df.columns:
+                        if 'PCR' in str(col).upper():
+                            try:
+                                current_pcr = pd.to_numeric(current_df[col], errors='coerce').dropna().iloc[-1]
+                                previous_pcr = pd.to_numeric(previous_df[col], errors='coerce').dropna().iloc[-1]
+                                
+                                pcr_change = abs(current_pcr - previous_pcr)
+                                if pcr_change > 0.1:
+                                    change_alerts.append({
+                                        'type': 'PCR_CHANGE',
+                                        'message': f'{col} changed significantly: {previous_pcr:.3f} → {current_pcr:.3f}',
+                                        'priority': 'HIGH' if pcr_change > 0.2 else 'MEDIUM'
+                                    })
+                            except:
+                                pass
+        
+        return change_alerts
+    
+    except Exception as e:
+        st.warning(f"Change detection error: {e}")
+        return []
+
+def display_live_alerts(all_alerts):
+    """Display live trading alerts"""
+    
+    if not all_alerts:
+        st.info("No active alerts")
+        return
+    
+    # Separate alerts by priority
+    high_priority = [alert for alert in all_alerts if alert.get('priority') == 'HIGH']
+    medium_priority = [alert for alert in all_alerts if alert.get('priority') == 'MEDIUM']
+    
+    if high_priority:
+        st.markdown("""
+        <div class="alert-header">
+            🚨 HIGH PRIORITY TRADING ALERTS 🚨
+        </div>
+        """, unsafe_allow_html=True)
+        
+        for alert in high_priority[:10]:  # Top 10 high priority
+            alert_type = alert.get('type', '')
             
-            if 'BULLISH' in signal:
-                card_class = 'pcr-bullish'
-            elif 'BEARISH' in signal:
-                card_class = 'pcr-bearish'
+            if 'LONG' in alert_type or 'BULLISH' in alert_type:
+                card_class = 'long-alert'
+            elif 'SHORT' in alert_type or 'BEARISH' in alert_type:
+                card_class = 'short-alert'
             else:
-                card_class = 'pcr-neutral'
+                card_class = 'pcr-alert'
             
             st.markdown(f"""
-            <div class="strategy-card">
-                <h4>{pcr_name} Strategy</h4>
-                <div class="{card_class}">
-                    <strong>Signal:</strong> {signal}<br>
-                    <strong>PCR Value:</strong> {pcr_data['value']:.3f}<br>
-                    <strong>Strategy:</strong> {pcr_data['strategy']}<br>
-                    <strong>Confidence:</strong> {pcr_data['confidence']}
-                </div>
+            <div class="{card_class}">
+                <strong>{alert['message']}</strong><br>
+                Action: {alert.get('action', 'Monitor closely')}<br>
+                Time: {datetime.now().strftime('%H:%M:%S')}
             </div>
             """, unsafe_allow_html=True)
     
-    # Stock Strategy Section
-    if stock_strategies:
-        st.header("Stock Trading Strategies")
-        
-        strategy_tabs = st.tabs(['Long Candidates', 'Short Candidates', 'Breakout Stocks', 'High Volume'])
-        
-        with strategy_tabs[0]:
-            long_candidates = stock_strategies.get('long_candidates', [])
-            if long_candidates:
-                st.subheader(f"Top {len(long_candidates)} Long Opportunities")
-                for stock in long_candidates:
-                    st.markdown(f"""
-                    <div class="buy-signal">
-                        <strong>{stock['symbol']}</strong> | Change: +{stock['change']:.2f}%<br>
-                        {stock['strategy']}<br>
-                        Volume: {stock['volume']:,.0f}
-                    </div>
-                    """, unsafe_allow_html=True)
-            else:
-                st.info("No strong long candidates identified")
-        
-        with strategy_tabs[1]:
-            short_candidates = stock_strategies.get('short_candidates', [])
-            if short_candidates:
-                st.subheader(f"Top {len(short_candidates)} Short Opportunities")
-                for stock in short_candidates:
-                    st.markdown(f"""
-                    <div class="sell-signal">
-                        <strong>{stock['symbol']}</strong> | Change: {stock['change']:.2f}%<br>
-                        {stock['strategy']}<br>
-                        Volume: {stock['volume']:,.0f}
-                    </div>
-                    """, unsafe_allow_html=True)
-            else:
-                st.info("No strong short candidates identified")
-        
-        with strategy_tabs[2]:
-            breakout_stocks = stock_strategies.get('breakout_stocks', [])
-            if breakout_stocks:
-                st.subheader("Breakout Opportunities")
-                for stock in breakout_stocks:
-                    st.markdown(f"""
-                    <div class="neutral-signal">
-                        <strong>{stock['symbol']}</strong> | Change: {stock['change']:+.2f}%<br>
-                        {stock['strategy']}<br>
-                        Volume: {stock['volume']:,.0f}
-                    </div>
-                    """, unsafe_allow_html=True)
-        
-        with strategy_tabs[3]:
-            high_volume = stock_strategies.get('high_volume_plays', [])[:10]
-            if high_volume:
-                st.subheader("High Volume Stocks to Watch")
-                for stock in high_volume:
-                    st.write(f"**{stock['symbol']}** | Change: {stock['change']:+.2f}% | Volume: {stock['volume']:,.0f}")
-    
-    # Sector Strategy Section
-    if sector_strategies:
-        st.header("Sector Rotation Strategy")
-        
-        sector_cols = st.columns(2)
-        sectors_list = list(sector_strategies.items())
-        
-        for i, (sector, data) in enumerate(sectors_list):
-            col = sector_cols[i % 2]
+    if medium_priority:
+        st.subheader("Medium Priority Alerts")
+        for alert in medium_priority[:10]:
+            alert_type = alert.get('type', '')
             
-            with col:
-                signal = data['signal']
-                
-                if 'BUY' in signal:
-                    card_class = 'buy-signal'
-                elif 'SELL' in signal:
-                    card_class = 'sell-signal'
-                else:
-                    card_class = 'neutral-signal'
-                
-                st.markdown(f"""
-                <div class="{card_class}">
-                    <h5>{sector}</h5>
-                    Performance: {data['performance']:+.2f}%<br>
-                    {data['strategy']}<br>
-                    Confidence: {data['confidence']}
-                </div>
-                """, unsafe_allow_html=True)
+            if 'LONG' in alert_type or 'BULLISH' in alert_type:
+                st.success(f"🟢 {alert['message']} - {alert.get('action', '')}")
+            elif 'SHORT' in alert_type or 'BEARISH' in alert_type:
+                st.error(f"🔴 {alert['message']} - {alert.get('action', '')}")
+            else:
+                st.warning(f"🟡 {alert['message']} - {alert.get('action', '')}")
+
+def display_live_summary(data_dict):
+    """Display live market summary"""
     
-    # Screener Opportunities
-    if screener_opportunities:
-        st.header("Screener Opportunities")
-        
-        with st.expander(f"View All {len(screener_opportunities)} Screened Stocks"):
-            screener_df = pd.DataFrame(screener_opportunities)
-            st.dataframe(screener_df, use_container_width=True)
+    st.header("Live Market Summary")
     
-    # Trading Summary
-    st.header("Executive Trading Summary")
+    current_time = datetime.now().strftime('%H:%M:%S')
     
     summary_cols = st.columns(4)
     
+    # Count alerts by type
+    total_stocks = 0
+    bullish_stocks = 0
+    bearish_stocks = 0
+    neutral_stocks = 0
+    
+    for sheet_name in data_dict:
+        if 'Dashboard' in sheet_name:
+            df = data_dict[sheet_name]
+            change_cols = [col for col in df.columns if any(term in str(col).upper() for term in ['CHANGE', '%'])]
+            if change_cols:
+                changes = pd.to_numeric(df[change_cols[0]], errors='coerce').dropna()
+                total_stocks += len(changes)
+                bullish_stocks += len(changes[changes > 1])
+                bearish_stocks += len(changes[changes < -1])
+                neutral_stocks += len(changes[abs(changes) <= 1])
+    
     with summary_cols[0]:
-        long_count = len(stock_strategies.get('long_candidates', []))
-        st.metric("Long Opportunities", long_count)
+        st.markdown(f"""
+        <div class="live-data">
+            <h3>{total_stocks}</h3>
+            <p>TOTAL STOCKS</p>
+            <small>{current_time}</small>
+        </div>
+        """, unsafe_allow_html=True)
     
     with summary_cols[1]:
-        short_count = len(stock_strategies.get('short_candidates', []))
-        st.metric("Short Opportunities", short_count)
+        st.markdown(f"""
+        <div class="metric-alert bullish">
+            <h3>{bullish_stocks}</h3>
+            <p>BULLISH STOCKS</p>
+        </div>
+        """, unsafe_allow_html=True)
     
     with summary_cols[2]:
-        breakout_count = len(stock_strategies.get('breakout_stocks', []))
-        st.metric("Breakout Plays", breakout_count)
+        st.markdown(f"""
+        <div class="metric-alert bearish">
+            <h3>{bearish_stocks}</h3>
+            <p>BEARISH STOCKS</p>
+        </div>
+        """, unsafe_allow_html=True)
     
     with summary_cols[3]:
-        screener_count = len(screener_opportunities)
-        st.metric("Screener Stocks", screener_count)
+        st.markdown(f"""
+        <div class="metric-alert neutral">
+            <h3>{neutral_stocks}</h3>
+            <p>NEUTRAL STOCKS</p>
+        </div>
+        """, unsafe_allow_html=True)
+
+def display_support_resistance(data_dict):
+    """Display support and resistance levels"""
+    
+    st.subheader("Key Levels")
+    
+    levels_data = []
+    
+    # Extract from PCR data if available
+    if 'PCR & OI Chart' in data_dict:
+        pcr_df = data_dict['PCR & OI Chart']
+        
+        # Look for support/resistance indicators
+        for col in pcr_df.columns:
+            if any(term in str(col).upper() for term in ['SUPPORT', 'RESISTANCE', 'LEVEL']):
+                values = pd.to_numeric(pcr_df[col], errors='coerce').dropna()
+                if not values.empty:
+                    current_value = values.iloc[-1]
+                    levels_data.append({
+                        'Level': col,
+                        'Value': current_value,
+                        'Type': 'Support' if 'SUPPORT' in str(col).upper() else 'Resistance'
+                    })
+    
+    if levels_data:
+        levels_df = pd.DataFrame(levels_data)
+        st.dataframe(levels_df, use_container_width=True)
+    else:
+        st.info("Support/Resistance levels will appear when data is available")
 
 def main():
-    # Auto-refresh configuration
-    refresh_interval = 60  # seconds
+    st.markdown("""
+    <div class="alert-header">
+        🔴 LIVE TRADING ALERTS DASHBOARD 🔴
+    </div>
+    """, unsafe_allow_html=True)
     
-    # Initialize session state for file upload
-    if 'uploaded_file' not in st.session_state:
-        st.session_state.uploaded_file = None
+    # Sidebar controls
+    st.sidebar.header("Live Dashboard Controls")
     
-    # File uploader
-    uploaded_file = st.file_uploader("Upload Professional Trading Excel", type=['xlsx', 'xlsm', 'xls'])
+    auto_refresh = st.sidebar.checkbox("Auto Refresh", value=True)
+    refresh_interval = st.sidebar.slider("Refresh Interval (seconds)", 5, 60, 10)
     
-    if uploaded_file is not None:
-        # Save uploaded file to session state
-        st.session_state.uploaded_file = uploaded_file
-        
-        # Process the file
+    if st.sidebar.button("Manual Refresh Now"):
+        st.session_state.refresh_count += 1
+        st.rerun()
+    
+    st.sidebar.metric("Refresh Count", st.session_state.refresh_count)
+    st.sidebar.metric("Last Refresh", st.session_state.last_refresh.strftime('%H:%M:%S'))
+    
+    # File upload
+    uploaded_file = st.file_uploader("Upload Live Trading Data", type=['xlsx', 'xlsm', 'xls'])
+    
+    if uploaded_file:
         temp_path = f"temp_{uploaded_file.name}"
         with open(temp_path, "wb") as f:
             f.write(uploaded_file.getbuffer())
         
-        with st.spinner("Processing professional trading data..."):
-            data_dict = read_all_trading_sheets(temp_path)
+        # Read current data
+        current_data = read_trading_data(temp_path)
         
         try:
             os.remove(temp_path)
         except:
             pass
         
-        if data_dict:
-            display_professional_dashboard(data_dict)
+        if current_data:
+            # Generate alerts
+            all_alerts = []
             
-            # Auto-refresh information
-            last_refresh = datetime.now().strftime("%H:%M:%S")
-            st.markdown(f"""
-            <div class="refresh-info">
-                Last refresh: {last_refresh} | Auto-refresh every {refresh_interval} seconds
-            </div>
-            """, unsafe_allow_html=True)
+            # PCR alerts
+            if 'PCR & OI Chart' in current_data:
+                pcr_alerts = analyze_pcr_alerts(current_data['PCR & OI Chart'])
+                all_alerts.extend(pcr_alerts)
+            
+            # Stock alerts
+            for sheet_name in current_data:
+                if 'Dashboard' in sheet_name:
+                    stock_alerts = analyze_stock_alerts(current_data[sheet_name])
+                    all_alerts.extend(stock_alerts)
+            
+            # Change detection alerts
+            change_alerts = detect_data_changes(current_data, st.session_state.previous_data)
+            all_alerts.extend(change_alerts)
+            
+            # Update previous data
+            st.session_state.previous_data = current_data.copy()
+            
+            # Display alerts
+            display_live_alerts(all_alerts)
+            
+            # Display summary
+            display_live_summary(current_data)
+            
+            # Display support/resistance
+            display_support_resistance(current_data)
+            
+            # Alert history
+            if all_alerts:
+                st.session_state.alerts_history.extend([
+                    {
+                        'time': datetime.now().strftime('%H:%M:%S'),
+                        'alert': alert['message']
+                    } for alert in all_alerts[:5]
+                ])
+                
+                # Keep only last 20 alerts
+                if len(st.session_state.alerts_history) > 20:
+                    st.session_state.alerts_history = st.session_state.alerts_history[-20:]
+            
+            # Display alert history
+            if st.session_state.alerts_history:
+                with st.expander("Alert History"):
+                    for alert_record in reversed(st.session_state.alerts_history[-10:]):
+                        st.write(f"{alert_record['time']}: {alert_record['alert']}")
             
             # Auto-refresh logic
-            time.sleep(refresh_interval)
-            st.experimental_rerun()
+            if auto_refresh:
+                time_since_refresh = (datetime.now() - st.session_state.last_refresh).total_seconds()
+                
+                if time_since_refresh >= refresh_interval:
+                    st.session_state.last_refresh = datetime.now()
+                    st.session_state.refresh_count += 1
+                    time.sleep(1)
+                    st.rerun()
+                else:
+                    time_remaining = refresh_interval - time_since_refresh
+                    st.sidebar.info(f"Next refresh in {int(time_remaining)} seconds")
+                    time.sleep(1)
+                    st.rerun()
+        
         else:
-            st.error("Could not process trading data")
+            st.error("Could not load trading data")
+    
     else:
-        st.info("Upload your Excel file with professional trading sheets")
+        st.info("Upload your Excel file to start live alerts")
         
         st.markdown("""
-        ### Expected Sheets:
-        - **Dashboard/Stock Dashboard**: Stock performance data
-        - **PCR & OI Chart**: Options market sentiment
-        - **Sector Dashboard**: Sector performance metrics  
-        - **Screener**: Pre-filtered trading opportunities
-        - **Greeks**: Options Greeks analysis
-        - **FII DII Data**: Institutional flow data
+        ### Features:
+        - Real-time PCR alerts for options trading
+        - Long/Short signals based on stock performance  
+        - Auto-refresh with customizable intervals
+        - Change detection between data updates
+        - Support/Resistance level monitoring
+        - Alert history tracking
         """)
-        
-        # If we have a file in session state but no new upload, keep showing it
-        if st.session_state.uploaded_file is not None:
-            st.info("Showing previously uploaded data. Upload a new file to refresh.")
-            # We don't auto-refresh in this case to avoid confusion
 
 if __name__ == "__main__":
     main()
