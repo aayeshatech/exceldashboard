@@ -5,8 +5,8 @@ import warnings
 import time
 import subprocess
 import sys
-import zipfile
-import xml.etree.ElementTree as ET
+import io
+import base64
 from datetime import datetime
 warnings.filterwarnings('ignore')
 
@@ -86,85 +86,126 @@ def install_excel_libraries():
         st.error("❌ Failed to install Excel libraries automatically.")
         return False
 
-def read_excel_without_libraries(file):
-    """Read Excel file without external libraries using zipfile and XML parsing"""
+def read_excel_with_pandas(file):
+    """Try to read Excel file with pandas using different engines"""
     try:
-        # Excel files are zip archives containing XML files
-        with zipfile.ZipFile(file) as z:
-            # Get the workbook relationships to find sheet names
-            with z.open('xl/_rels/.rels') as f:
-                rels = f.read()
+        # Try with openpyxl engine
+        try:
+            excel_file = pd.ExcelFile(file, engine='openpyxl')
+            st.info(f"📁 Found {len(excel_file.sheet_names)} sheets in Excel file")
             
-            # Parse the XML to find sheet relationships
-            root = ET.fromstring(rels)
-            sheets = []
-            for child in root:
-                if child.attrib.get('Type') == 'http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument':
-                    target = child.attrib.get('Target')
-                    if target:
-                        # Now get the workbook.xml to find sheet names
-                        with z.open(f"xl/{target}") as f:
-                            workbook = f.read()
-                        workbook_root = ET.fromstring(workbook)
-                        
-                        # Find sheet names
-                        for sheet in workbook_root.findall('.//{http://schemas.openxmlformats.org/spreadsheetml/2006/main}sheet'):
-                            sheet_name = sheet.attrib.get('name')
-                            sheet_id = sheet.attrib.get('sheetId')
-                            r_id = sheet.attrib.get('{http://schemas.openxmlformats.org/officeDocument/2006/relationships}id')
-                            sheets.append({
-                                'name': sheet_name,
-                                'id': sheet_id,
-                                'r_id': r_id
-                            })
-                        
-                        # Now get the workbook relationships to find sheet files
-                        with z.open(f"xl/_rels/{target.split('/')[-1]}.rels") as f:
-                            workbook_rels = f.read()
-                        workbook_rels_root = ET.fromstring(workbook_rels)
-                        
-                        # Map relationship IDs to file names
-                        sheet_files = {}
-                        for rel in workbook_rels_root:
-                            if rel.attrib.get('Type') == 'http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet':
-                                r_id = rel.attrib.get('Id')
-                                target = rel.attrib.get('Target')
-                                sheet_files[r_id] = target
-                        
-                        # Now read each sheet
-                        data_dict = {}
-                        for sheet in sheets:
-                            r_id = sheet.get('r_id')
-                            if r_id in sheet_files:
-                                sheet_file = sheet_files[r_id]
-                                with z.open(f"xl/{sheet_file}") as f:
-                                    sheet_data = f.read()
-                                
-                                # Parse the sheet XML
-                                sheet_root = ET.fromstring(sheet_data)
-                                
-                                # Extract data
-                                rows = []
-                                for row in sheet_root.findall('.//{http://schemas.openxmlformats.org/spreadsheetml/2006/main}row'):
-                                    row_data = []
-                                    for cell in row.findall('.//{http://schemas.openxmlformats.org/spreadsheetml/2006/main}c'):
-                                        value = cell.find('.//{http://schemas.openxmlformats.org/spreadsheetml/2006/main}v')
-                                        if value is not None:
-                                            row_data.append(value.text)
-                                        else:
-                                            row_data.append("")
-                                    rows.append(row_data)
-                                
-                                # Convert to DataFrame
-                                if rows:
-                                    df = pd.DataFrame(rows[1:], columns=rows[0] if rows[0] else None)
-                                    data_dict[sheet['name']] = df
-                        
-                        return data_dict
+            data_dict = {}
+            for sheet_name in excel_file.sheet_names:
+                try:
+                    df = pd.read_excel(file, sheet_name=sheet_name, engine='openpyxl')
+                    if not df.empty:
+                        data_dict[sheet_name] = df
+                        st.success(f"✅ Loaded sheet: {sheet_name} ({len(df)} rows, {len(df.columns)} columns)")
+                    else:
+                        st.warning(f"⚠️ Sheet '{sheet_name}' is empty")
+                except Exception as sheet_error:
+                    st.warning(f"⚠️ Could not load sheet '{sheet_name}': {str(sheet_error)}")
+                    continue
+            
+            if data_dict:
+                return data_dict
+        except ImportError:
+            pass
+        
+        # Try with xlrd engine
+        try:
+            excel_file = pd.ExcelFile(file, engine='xlrd')
+            st.info(f"📁 Found {len(excel_file.sheet_names)} sheets in Excel file")
+            
+            data_dict = {}
+            for sheet_name in excel_file.sheet_names:
+                try:
+                    df = pd.read_excel(file, sheet_name=sheet_name, engine='xlrd')
+                    if not df.empty:
+                        data_dict[sheet_name] = df
+                        st.success(f"✅ Loaded sheet: {sheet_name} ({len(df)} rows, {len(df.columns)} columns)")
+                    else:
+                        st.warning(f"⚠️ Sheet '{sheet_name}' is empty")
+                except Exception as sheet_error:
+                    st.warning(f"⚠️ Could not load sheet '{sheet_name}': {str(sheet_error)}")
+                    continue
+            
+            if data_dict:
+                return data_dict
+        except ImportError:
+            pass
+        
+        # Try without specifying engine
+        try:
+            excel_file = pd.ExcelFile(file)
+            st.info(f"📁 Found {len(excel_file.sheet_names)} sheets in Excel file")
+            
+            data_dict = {}
+            for sheet_name in excel_file.sheet_names:
+                try:
+                    df = pd.read_excel(file, sheet_name=sheet_name)
+                    if not df.empty:
+                        data_dict[sheet_name] = df
+                        st.success(f"✅ Loaded sheet: {sheet_name} ({len(df)} rows, {len(df.columns)} columns)")
+                    else:
+                        st.warning(f"⚠️ Sheet '{sheet_name}' is empty")
+                except Exception as sheet_error:
+                    st.warning(f"⚠️ Could not load sheet '{sheet_name}': {str(sheet_error)}")
+                    continue
+            
+            if data_dict:
+                return data_dict
+        except Exception as e:
+            st.error(f"Error reading Excel file: {str(e)}")
         
         return None
     except Exception as e:
-        st.error(f"Error reading Excel without libraries: {str(e)}")
+        st.error(f"Error reading Excel file: {str(e)}")
+        return None
+
+def read_excel_as_csv(file):
+    """Try to read Excel file by converting it to CSV in memory"""
+    try:
+        # Read the file as binary
+        file_content = file.read()
+        
+        # Try to create a temporary CSV-like representation
+        # This is a simplified approach and may not work for all Excel files
+        # but it's worth trying as a last resort
+        
+        # Convert to a string representation
+        string_content = file_content.decode('latin-1', errors='ignore')
+        
+        # Try to find tabular data in the file
+        lines = string_content.split('\n')
+        
+        # Find the longest lines that might contain data
+        potential_data_lines = []
+        for line in lines:
+            if len(line) > 50 and '\t' in line or ',' in line:
+                potential_data_lines.append(line)
+        
+        if potential_data_lines:
+            # Try to create a DataFrame from the potential data
+            try:
+                # Try with tab delimiter first
+                df = pd.read_csv(io.StringIO('\n'.join(potential_data_lines)), sep='\t')
+                if len(df.columns) > 1:
+                    return {'Sheet1': df}
+            except:
+                pass
+            
+            try:
+                # Try with comma delimiter
+                df = pd.read_csv(io.StringIO('\n'.join(potential_data_lines)), sep=',')
+                if len(df.columns) > 1:
+                    return {'Sheet1': df}
+            except:
+                pass
+        
+        return None
+    except Exception as e:
+        st.error(f"Error converting Excel to CSV: {str(e)}")
         return None
 
 @st.cache_data(ttl=30)
@@ -180,55 +221,20 @@ def load_data_file(file):
                 st.success(f"✅ Loaded CSV file successfully ({len(df)} rows, {len(df.columns)} columns)")
                 return {'CSV_Data': df}
         
-        elif file_extension in ['xlsx', 'xlsm']:
-            # Try to read Excel file using pandas first
-            try:
-                excel_file = pd.ExcelFile(file)
-                st.info(f"📁 Found {len(excel_file.sheet_names)} sheets in Excel file")
-                
-                data_dict = {}
-                # Try to read each sheet individually
-                for sheet_name in excel_file.sheet_names:
-                    try:
-                        df = pd.read_excel(file, sheet_name=sheet_name)
-                        if not df.empty:
-                            data_dict[sheet_name] = df
-                            st.success(f"✅ Loaded sheet: {sheet_name} ({len(df)} rows, {len(df.columns)} columns)")
-                        else:
-                            st.warning(f"⚠️ Sheet '{sheet_name}' is empty")
-                    except Exception as sheet_error:
-                        st.warning(f"⚠️ Could not load sheet '{sheet_name}': {str(sheet_error)}")
-                        continue
-                
-                if data_dict:
-                    return data_dict
-                else:
-                    st.error("❌ No sheets could be loaded from the Excel file using pandas")
-                    # Try alternative method
-                    st.info("Trying alternative method to read Excel file...")
-                    data_dict = read_excel_without_libraries(file)
-                    if data_dict:
-                        return data_dict
-                    else:
-                        return {'excel_libraries_missing': True}
-                
-            except ImportError:
-                # If Excel libraries not available, try alternative method
-                st.info("Excel libraries not found, trying alternative method...")
-                data_dict = read_excel_without_libraries(file)
-                if data_dict:
-                    return data_dict
-                else:
-                    return {'excel_libraries_missing': True}
-            except Exception as e:
-                # If reading Excel fails for any other reason, try alternative method
-                st.error(f"Error reading Excel file with pandas: {str(e)}")
-                st.info("Trying alternative method to read Excel file...")
-                data_dict = read_excel_without_libraries(file)
-                if data_dict:
-                    return data_dict
-                else:
-                    return {'excel_libraries_missing': True}
+        elif file_extension in ['xlsx', 'xlsm', 'xls']:
+            # Try to read Excel file using pandas
+            data_dict = read_excel_with_pandas(file)
+            if data_dict:
+                return data_dict
+            
+            # Try to convert Excel to CSV in memory
+            st.info("Trying alternative method to read Excel file...")
+            data_dict = read_excel_as_csv(file)
+            if data_dict:
+                return data_dict
+            
+            # If all methods fail, return error indicator
+            return {'excel_libraries_missing': True}
         
         else:
             st.error(f"❌ Unsupported file format: {file_extension}")
@@ -498,7 +504,7 @@ def main():
     # File uploader
     uploaded_file = st.sidebar.file_uploader(
         "Choose your file",
-        type=['xlsx', 'xlsm', 'csv'],
+        type=['xlsx', 'xlsm', 'xls', 'csv'],
         help="Upload Excel or CSV file with options data"
     )
     
@@ -770,6 +776,7 @@ def main():
             - 📄 **CSV** (Recommended - always works!)
             - 📊 **Excel .xlsx**
             - 📊 **Excel .xlsm** (with macros)
+            - 📊 **Excel .xls** (older format)
             
             ### 💡 **Tips:**
             - **CSV files load faster**
