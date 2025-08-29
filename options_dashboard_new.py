@@ -1,442 +1,499 @@
 import pandas as pd
-import streamlit as st
-from datetime import datetime, timedelta
-import time
 import numpy as np
-from typing import Dict, Tuple, Optional
+import streamlit as st
+import warnings
+import time
 import os
+from datetime import datetime
+import traceback
+warnings.filterwarnings('ignore')
 
-# Page Configuration
+# Set page config
 st.set_page_config(
-    page_title="Live Option Chain Dashboard", 
-    page_icon="📊", 
-    layout="wide",
-    initial_sidebar_state="expanded"
+    page_title="NSE Options Dashboard",
+    page_icon="⚡",
+    layout="wide"
 )
 
-# Configuration
-EXCEL_FILE = "Live_Option_Chain_Terminal.xlsx"
-REFRESH_INTERVAL = 5  # seconds
-MAX_RETRIES = 3
+# Custom CSS (simplified)
+st.markdown("""
+<style>
+.main-header {
+    font-size: 2.5rem;
+    font-weight: bold;
+    text-align: center;
+    color: #FF6B35;
+    margin-bottom: 1rem;
+}
+.metric-box {
+    background-color: #f0f2f6;
+    padding: 1rem;
+    border-radius: 5px;
+    text-align: center;
+    margin: 0.5rem 0;
+}
+.success { background-color: #d4edda; color: #155724; }
+.warning { background-color: #fff3cd; color: #856404; }
+.error { background-color: #f8d7da; color: #721c24; }
+.info { background-color: #d1ecf1; color: #0c5460; }
+</style>
+""", unsafe_allow_html=True)
 
 # Initialize session state
-if 'last_update' not in st.session_state:
-    st.session_state.last_update = datetime.now()
-if 'excel_data' not in st.session_state:
-    st.session_state.excel_data = {}
-if 'file_last_modified' not in st.session_state:
-    st.session_state.file_last_modified = None
+if 'last_refresh' not in st.session_state:
+    st.session_state.last_refresh = None
+if 'data_dict' not in st.session_state:
+    st.session_state.data_dict = {}
+if 'excel_file_path' not in st.session_state:
+    st.session_state.excel_file_path = ""
+if 'debug_info' not in st.session_state:
+    st.session_state.debug_info = []
 
-class ExcelDataManager:
-    def __init__(self, excel_file: str):
-        self.excel_file = excel_file
-        self.connection_status = False
-        self.last_successful_fetch = None
-        
-    def check_file_exists(self) -> bool:
-        """Check if Excel file exists"""
-        try:
-            return os.path.exists(self.excel_file) and os.path.isfile(self.excel_file)
-        except Exception:
-            return False
-    
-    def get_file_modified_time(self) -> Optional[float]:
-        """Get file modification time"""
-        try:
-            return os.path.getmtime(self.excel_file)
-        except Exception:
-            return None
-    
-    def read_excel_sheet(self, sheet_name: str, max_rows: int = 100) -> pd.DataFrame:
-        """Read Excel sheet using pandas"""
-        if not self.check_file_exists():
-            return pd.DataFrame()
-            
-        for attempt in range(MAX_RETRIES):
-            try:
-                df = pd.read_excel(
-                    self.excel_file, 
-                    sheet_name=sheet_name, 
-                    engine='openpyxl',
-                    nrows=max_rows
-                )
-                
-                if isinstance(df, pd.DataFrame) and not df.empty:
-                    df = df.dropna(how='all')
-                    for col in df.columns:
-                        if df[col].dtype == 'object':
-                            df[col] = pd.to_numeric(df[col], errors='ignore')
-                    
-                    self.connection_status = True
-                    return df
-                    
-            except FileNotFoundError:
-                st.error(f"⚠️ File {self.excel_file} not found")
-                break
-            except PermissionError:
-                st.warning(f"⚠️ File may be open in Excel. Attempt {attempt + 1}/{MAX_RETRIES}")
-                time.sleep(1)
-            except Exception as e:
-                if attempt == MAX_RETRIES - 1:
-                    st.warning(f"⚠️ Failed to read {sheet_name}: {str(e)}")
-                time.sleep(0.5)
-                
-        return pd.DataFrame()
-    
-    def get_sheet_names(self) -> list:
-        """Get all sheet names"""
-        try:
-            xl_file = pd.ExcelFile(self.excel_file, engine='openpyxl')
-            return xl_file.sheet_names
-        except Exception:
-            return []
-    
-    def fetch_all_data(self) -> Dict[str, pd.DataFrame]:
-        """Fetch data from all sheets"""
-        if not self.check_file_exists():
-            st.error(f"⚠️ Excel file {self.excel_file} not found!")
-            return {}
-        
-        # Check if file modified
-        current_modified_time = self.get_file_modified_time()
-        if (current_modified_time and 
-            st.session_state.file_last_modified and 
-            current_modified_time == st.session_state.file_last_modified and
-            st.session_state.excel_data):
-            return st.session_state.excel_data
-        
-        sheets_to_fetch = [
-            "PCR & OI Chart",
-            "OC_1", 
-            "OC_2",
-            "Dashboard",
-            "Sector Dashboard", 
-            "Screener",
-            "FII DII Data",
-            "Fiis&Diis Dashboard",
-            "Globlemarket"
-        ]
-        
-        available_sheets = self.get_sheet_names()
-        if available_sheets:
-            sheets_to_fetch = [sheet for sheet in sheets_to_fetch if sheet in available_sheets]
-        
-        data = {}
-        successful_reads = 0
-        
-        for sheet in sheets_to_fetch:
-            try:
-                df = self.read_excel_sheet(sheet)
-                if not df.empty:
-                    data[sheet] = df
-                    st.session_state.excel_data[sheet] = df
-                    successful_reads += 1
-            except Exception as e:
-                st.warning(f"Could not fetch {sheet}: {e}")
-        
-        if successful_reads > 0:
-            self.last_successful_fetch = datetime.now()
-            st.session_state.last_update = self.last_successful_fetch
-            st.session_state.file_last_modified = current_modified_time
-            
-        return data
+def log_debug(message):
+    """Add debug information"""
+    timestamp = datetime.now().strftime("%H:%M:%S")
+    st.session_state.debug_info.append(f"[{timestamp}] {message}")
+    if len(st.session_state.debug_info) > 20:  # Keep only last 20 entries
+        st.session_state.debug_info = st.session_state.debug_info[-20:]
 
-@st.cache_resource
-def get_excel_manager():
-    return ExcelDataManager(EXCEL_FILE)
-
-excel_manager = get_excel_manager()
-
-def calculate_support_resistance_maxpain(df: pd.DataFrame) -> Tuple[Optional[float], Optional[float], Optional[float]]:
-    """Calculate support, resistance, and max pain levels"""
+def read_excel_file(file_path):
+    """Read Excel file with comprehensive error handling"""
     try:
-        df_columns = [col.upper() for col in df.columns]
-        required_cols = ['STRIKE', 'CE_OI', 'PE_OI']
+        log_debug(f"Attempting to read file: {file_path}")
         
-        col_mapping = {}
-        for req_col in required_cols:
-            found = False
-            for actual_col in df.columns:
-                if req_col in actual_col.upper():
-                    col_mapping[req_col] = actual_col
-                    found = True
-                    break
-            if not found:
-                return None, None, None
+        # Check if file exists
+        if not os.path.exists(file_path):
+            log_debug(f"File not found: {file_path}")
+            return {"error": f"File not found: {file_path}"}
         
-        df_clean = df.dropna(subset=list(col_mapping.values()))
-        df_clean = df_clean[df_clean[col_mapping['STRIKE']] > 0]
+        # Check file extension
+        file_ext = file_path.lower().split('.')[-1]
+        log_debug(f"File extension: {file_ext}")
         
-        if df_clean.empty:
-            return None, None, None
+        if file_ext not in ['xlsx', 'xlsm', 'xls']:
+            return {"error": f"Unsupported file format: {file_ext}"}
+        
+        # Try to read the Excel file
+        try:
+            # First, get all sheet names
+            excel_file = pd.ExcelFile(file_path, engine='openpyxl' if file_ext in ['xlsx', 'xlsm'] else 'xlrd')
+            sheet_names = excel_file.sheet_names
+            log_debug(f"Found sheets: {sheet_names}")
             
-        # Support (highest PE OI)
-        pe_oi_idx = df_clean[col_mapping['PE_OI']].idxmax()
-        support = df_clean.loc[pe_oi_idx, col_mapping['STRIKE']]
-        
-        # Resistance (highest CE OI)
-        ce_oi_idx = df_clean[col_mapping['CE_OI']].idxmax()
-        resistance = df_clean.loc[ce_oi_idx, col_mapping['STRIKE']]
-        
-        # Max Pain calculation
-        strikes = sorted(df_clean[col_mapping['STRIKE']].unique())
-        total_pain = {}
-        
-        for strike in strikes:
-            call_pain = 0
-            put_pain = 0
+            data_dict = {}
             
-            itm_calls = df_clean[df_clean[col_mapping['STRIKE']] < strike]
-            if not itm_calls.empty:
-                call_pain = (itm_calls[col_mapping['CE_OI']] * (strike - itm_calls[col_mapping['STRIKE']])).sum()
+            # Read each sheet
+            for sheet_name in sheet_names:
+                try:
+                    log_debug(f"Reading sheet: {sheet_name}")
+                    df = pd.read_excel(
+                        file_path, 
+                        sheet_name=sheet_name,
+                        engine='openpyxl' if file_ext in ['xlsx', 'xlsm'] else 'xlrd'
+                    )
+                    
+                    if not df.empty:
+                        log_debug(f"Sheet {sheet_name}: {len(df)} rows, {len(df.columns)} columns")
+                        data_dict[sheet_name] = df
+                    else:
+                        log_debug(f"Sheet {sheet_name} is empty")
+                        
+                except Exception as sheet_error:
+                    log_debug(f"Error reading sheet {sheet_name}: {str(sheet_error)}")
+                    continue
             
-            itm_puts = df_clean[df_clean[col_mapping['STRIKE']] > strike]
-            if not itm_puts.empty:
-                put_pain = (itm_puts[col_mapping['PE_OI']] * (itm_puts[col_mapping['STRIKE']] - strike)).sum()
+            if data_dict:
+                log_debug(f"Successfully loaded {len(data_dict)} sheets")
+                return data_dict
+            else:
+                return {"error": "No data could be loaded from any sheets"}
+                
+        except Exception as read_error:
+            log_debug(f"Error reading Excel file: {str(read_error)}")
+            return {"error": f"Error reading Excel file: {str(read_error)}"}
             
-            total_pain[strike] = call_pain + put_pain
+    except Exception as e:
+        log_debug(f"Unexpected error: {str(e)}")
+        return {"error": f"Unexpected error: {str(e)}"}
+
+def load_uploaded_file(uploaded_file):
+    """Load data from uploaded file"""
+    try:
+        log_debug("Processing uploaded file")
         
-        max_pain = min(total_pain, key=total_pain.get) if total_pain else None
+        # Save uploaded file temporarily
+        temp_path = "temp_uploaded_file.xlsx"
+        with open(temp_path, "wb") as f:
+            f.write(uploaded_file.getbuffer())
         
-        return float(support), float(resistance), float(max_pain) if max_pain else None
+        log_debug(f"Saved uploaded file to: {temp_path}")
+        
+        # Read the file
+        result = read_excel_file(temp_path)
+        
+        # Clean up temp file
+        try:
+            os.remove(temp_path)
+            log_debug("Cleaned up temp file")
+        except:
+            pass
+            
+        return result
         
     except Exception as e:
-        return None, None, None
+        log_debug(f"Error processing uploaded file: {str(e)}")
+        return {"error": f"Error processing uploaded file: {str(e)}"}
 
-def display_pcr_data(pcr_df: pd.DataFrame):
-    """Display PCR data"""
-    if pcr_df.empty:
-        st.warning("No PCR data available")
-        return
-        
-    st.header("📊 Market Sentiment (PCR)")
-    
+def calculate_pcr_metrics(df):
+    """Calculate PCR and other metrics"""
     try:
-        pcr_oi = None
-        pcr_vol = None
+        log_debug("Calculating PCR metrics")
+        log_debug(f"DataFrame columns: {list(df.columns)}")
         
-        # Look for PCR columns
-        for i, col in enumerate(pcr_df.columns):
-            if 'PCR' in str(col).upper() and 'OI' in str(col).upper():
-                pcr_oi = pd.to_numeric(pcr_df.iloc[0, i], errors='coerce')
-            elif 'PCR' in str(col).upper() and 'VOL' in str(col).upper():
-                pcr_vol = pd.to_numeric(pcr_df.iloc[0, i], errors='coerce')
+        # Find relevant columns (case insensitive)
+        call_oi_cols = [col for col in df.columns if 'CE' in col.upper() and 'OI' in col.upper() and 'CHANGE' not in col.upper()]
+        put_oi_cols = [col for col in df.columns if 'PE' in col.upper() and 'OI' in col.upper() and 'CHANGE' not in col.upper()]
+        call_vol_cols = [col for col in df.columns if 'CE' in col.upper() and 'VOL' in col.upper()]
+        put_vol_cols = [col for col in df.columns if 'PE' in col.upper() and 'VOL' in col.upper()]
+        strike_cols = [col for col in df.columns if 'STRIKE' in col.upper()]
         
-        # Fallback to positions
-        if pcr_oi is None and len(pcr_df.columns) >= 3:
-            pcr_oi = pd.to_numeric(pcr_df.iloc[0, 2], errors='coerce')
-        if pcr_vol is None and len(pcr_df.columns) >= 4:
-            pcr_vol = pd.to_numeric(pcr_df.iloc[0, 3], errors='coerce')
+        log_debug(f"Call OI columns: {call_oi_cols}")
+        log_debug(f"Put OI columns: {put_oi_cols}")
+        log_debug(f"Strike columns: {strike_cols}")
         
-        col1, col2, col3 = st.columns(3)
+        metrics = {}
         
-        with col1:
-            if pcr_oi is not None:
-                st.metric("⚖️ PCR (OI)", f"{pcr_oi:.3f}")
-                if pcr_oi > 1.2:
-                    st.success("🐻 Bearish")
-                elif pcr_oi < 0.8:
-                    st.error("🐂 Bullish")
+        # Calculate PCR (OI)
+        if call_oi_cols and put_oi_cols:
+            call_oi_total = df[call_oi_cols[0]].fillna(0).sum()
+            put_oi_total = df[put_oi_cols[0]].fillna(0).sum()
+            
+            if call_oi_total > 0:
+                pcr_oi = put_oi_total / call_oi_total
+                metrics['pcr_oi'] = pcr_oi
+                metrics['call_oi_total'] = call_oi_total
+                metrics['put_oi_total'] = put_oi_total
+                log_debug(f"PCR (OI): {pcr_oi:.3f}")
+        
+        # Calculate PCR (Volume)
+        if call_vol_cols and put_vol_cols:
+            call_vol_total = df[call_vol_cols[0]].fillna(0).sum()
+            put_vol_total = df[put_vol_cols[0]].fillna(0).sum()
+            
+            if call_vol_total > 0:
+                pcr_vol = put_vol_total / call_vol_total
+                metrics['pcr_vol'] = pcr_vol
+                metrics['call_vol_total'] = call_vol_total
+                metrics['put_vol_total'] = put_vol_total
+                log_debug(f"PCR (Vol): {pcr_vol:.3f}")
+        
+        # Calculate Max Pain
+        if strike_cols and call_oi_cols and put_oi_cols:
+            try:
+                strike_col = strike_cols[0]
+                call_oi_col = call_oi_cols[0]
+                put_oi_col = put_oi_cols[0]
+                
+                clean_df = df[[strike_col, call_oi_col, put_oi_col]].dropna()
+                
+                if len(clean_df) > 0:
+                    strikes = sorted(clean_df[strike_col].unique())
+                    total_pain = []
+                    
+                    for strike in strikes:
+                        call_pain = 0
+                        put_pain = 0
+                        
+                        for _, row in clean_df.iterrows():
+                            if row[strike_col] < strike:
+                                call_pain += row[call_oi_col] * (strike - row[strike_col])
+                            elif row[strike_col] > strike:
+                                put_pain += row[put_oi_col] * (row[strike_col] - strike)
+                        
+                        total_pain.append(call_pain + put_pain)
+                    
+                    if total_pain:
+                        max_pain_idx = np.argmin(total_pain)
+                        max_pain = strikes[max_pain_idx]
+                        metrics['max_pain'] = max_pain
+                        log_debug(f"Max Pain: {max_pain}")
+                        
+                        # Support and Resistance
+                        max_put_oi_idx = clean_df[put_oi_col].idxmax()
+                        max_call_oi_idx = clean_df[call_oi_col].idxmax()
+                        
+                        support = clean_df.loc[max_put_oi_idx, strike_col]
+                        resistance = clean_df.loc[max_call_oi_idx, strike_col]
+                        
+                        metrics['support'] = support
+                        metrics['resistance'] = resistance
+                        log_debug(f"Support: {support}, Resistance: {resistance}")
+            except Exception as max_pain_error:
+                log_debug(f"Error calculating max pain: {str(max_pain_error)}")
+        
+        return metrics
+        
+    except Exception as e:
+        log_debug(f"Error calculating metrics: {str(e)}")
+        return {}
+
+def display_data_info(df):
+    """Display information about the loaded data"""
+    st.subheader("📊 Data Information")
+    
+    col1, col2, col3 = st.columns(3)
+    with col1:
+        st.metric("Rows", len(df))
+    with col2:
+        st.metric("Columns", len(df.columns))
+    with col3:
+        st.metric("Non-null values", df.count().sum())
+    
+    # Show column names
+    with st.expander("📋 Column Names"):
+        for i, col in enumerate(df.columns, 1):
+            st.write(f"{i}. {col}")
+    
+    # Show sample data
+    with st.expander("📄 Sample Data (First 5 rows)"):
+        st.dataframe(df.head(), use_container_width=True)
+
+def main():
+    st.markdown('<h1 class="main-header">⚡ NSE Options Dashboard</h1>', unsafe_allow_html=True)
+    
+    # Sidebar
+    st.sidebar.header("📁 Data Source")
+    
+    # Method selection
+    method = st.sidebar.radio(
+        "Choose data source:",
+        ["File Path", "File Upload"]
+    )
+    
+    data_loaded = False
+    
+    if method == "File Path":
+        # File path input
+        file_path = st.sidebar.text_input(
+            "Excel File Path:",
+            value=st.session_state.excel_file_path,
+            placeholder="C:/path/to/your/file.xlsx"
+        )
+        
+        if file_path != st.session_state.excel_file_path:
+            st.session_state.excel_file_path = file_path
+            st.session_state.data_dict = {}
+            st.session_state.debug_info = []
+        
+        if st.sidebar.button("🔄 Load Data", type="primary"):
+            if file_path:
+                with st.spinner("Loading Excel file..."):
+                    result = read_excel_file(file_path)
+                    
+                    if "error" in result:
+                        st.error(f"Error: {result['error']}")
+                    else:
+                        st.session_state.data_dict = result
+                        st.session_state.last_refresh = datetime.now()
+                        data_loaded = True
+                        st.success(f"✅ Loaded {len(result)} sheets successfully!")
+            else:
+                st.error("Please enter a file path")
+    
+    else:
+        # File upload
+        uploaded_file = st.sidebar.file_uploader(
+            "Upload Excel File:",
+            type=['xlsx', 'xlsm', 'xls']
+        )
+        
+        if uploaded_file is not None:
+            with st.spinner("Processing uploaded file..."):
+                result = load_uploaded_file(uploaded_file)
+                
+                if "error" in result:
+                    st.error(f"Error: {result['error']}")
                 else:
-                    st.info("😐 Neutral")
-            else:
-                st.warning("PCR OI not found")
+                    st.session_state.data_dict = result
+                    st.session_state.last_refresh = datetime.now()
+                    data_loaded = True
+                    st.success(f"✅ Loaded {len(result)} sheets successfully!")
+    
+    # Debug information
+    with st.sidebar.expander("🔧 Debug Info"):
+        if st.session_state.debug_info:
+            for info in st.session_state.debug_info[-10:]:  # Show last 10 entries
+                st.text(info)
+        else:
+            st.text("No debug information yet")
         
-        with col2:
-            if pcr_vol is not None:
-                st.metric("📊 PCR (Vol)", f"{pcr_vol:.3f}")
-            else:
-                st.warning("PCR Vol not found")
+        if st.button("Clear Debug"):
+            st.session_state.debug_info = []
+            st.rerun()
+    
+    # Main content
+    if st.session_state.data_dict:
+        # Show last refresh time
+        if st.session_state.last_refresh:
+            st.info(f"📅 Last loaded: {st.session_state.last_refresh.strftime('%Y-%m-%d %H:%M:%S')}")
         
-        with col3:
-            st.metric("🕐 Last Update", 
-                     st.session_state.last_update.strftime('%H:%M:%S'))
-                     
-        with st.expander("📋 Raw PCR Data"):
-            st.dataframe(pcr_df, use_container_width=True)
+        # Sheet selection
+        sheet_names = list(st.session_state.data_dict.keys())
+        
+        if len(sheet_names) > 1:
+            selected_sheet = st.selectbox("📊 Select sheet to analyze:", sheet_names)
+        else:
+            selected_sheet = sheet_names[0]
+            st.info(f"📊 Analyzing sheet: {selected_sheet}")
+        
+        if selected_sheet in st.session_state.data_dict:
+            df = st.session_state.data_dict[selected_sheet].copy()
             
-    except Exception as e:
-        st.error(f"Error displaying PCR: {e}")
-        st.dataframe(pcr_df, use_container_width=True)
-
-def display_option_chain(df: pd.DataFrame, title: str):
-    """Display option chain"""
-    if df.empty:
-        st.warning(f"No {title} data available")
-        return
-        
-    st.subheader(title)
+            # Display data info
+            display_data_info(df)
+            
+            # Calculate metrics
+            metrics = calculate_pcr_metrics(df)
+            
+            if metrics:
+                st.header("📊 Key Metrics")
+                
+                cols = st.columns(5)
+                
+                with cols[0]:
+                    if 'call_oi_total' in metrics:
+                        st.metric("📞 Call OI", f"{int(metrics['call_oi_total']):,}")
+                
+                with cols[1]:
+                    if 'put_oi_total' in metrics:
+                        st.metric("📉 Put OI", f"{int(metrics['put_oi_total']):,}")
+                
+                with cols[2]:
+                    if 'pcr_oi' in metrics:
+                        st.metric("⚖️ PCR (OI)", f"{metrics['pcr_oi']:.3f}")
+                
+                with cols[3]:
+                    if 'pcr_vol' in metrics:
+                        st.metric("📊 PCR (Vol)", f"{metrics['pcr_vol']:.3f}")
+                
+                with cols[4]:
+                    if 'max_pain' in metrics:
+                        st.metric("💰 Max Pain", f"{int(metrics['max_pain']):,}")
+                
+                # Support/Resistance
+                if 'support' in metrics and 'resistance' in metrics:
+                    col1, col2 = st.columns(2)
+                    with col1:
+                        st.success(f"🟢 Support: {int(metrics['support']):,}")
+                    with col2:
+                        st.error(f"🔴 Resistance: {int(metrics['resistance']):,}")
+                
+                # Market sentiment
+                if 'pcr_oi' in metrics:
+                    pcr = metrics['pcr_oi']
+                    if pcr > 1.3:
+                        st.error("🐻 BEARISH SENTIMENT - High PCR indicates more puts")
+                    elif pcr < 0.7:
+                        st.success("🐂 BULLISH SENTIMENT - Low PCR indicates more calls")
+                    else:
+                        st.warning("⚖️ NEUTRAL SENTIMENT - Balanced put/call ratio")
+            
+            # Data display tabs
+            tab1, tab2, tab3 = st.tabs(["📊 Filtered Data", "📋 Full Data", "📈 Charts"])
+            
+            with tab1:
+                st.subheader("📊 Key Columns")
+                
+                # Find important columns
+                important_keywords = ['strike', 'oi', 'volume', 'ltp', 'change', 'iv']
+                important_cols = []
+                
+                for col in df.columns:
+                    col_lower = col.lower()
+                    if any(keyword in col_lower for keyword in important_keywords):
+                        important_cols.append(col)
+                
+                if important_cols:
+                    filtered_df = df[important_cols].copy()
+                    
+                    # Format numeric columns
+                    for col in filtered_df.columns:
+                        if filtered_df[col].dtype in ['float64', 'int64']:
+                            if 'oi' in col.lower() and 'change' not in col.lower():
+                                filtered_df[col] = filtered_df[col].apply(lambda x: f"{int(x):,}" if pd.notnull(x) else "")
+                            elif filtered_df[col].dtype == 'float64':
+                                filtered_df[col] = filtered_df[col].round(2)
+                    
+                    st.dataframe(filtered_df, use_container_width=True, height=500)
+                else:
+                    st.dataframe(df.head(20), use_container_width=True, height=500)
+            
+            with tab2:
+                st.subheader("📋 Complete Dataset")
+                st.dataframe(df, use_container_width=True, height=600)
+                
+                # Download option
+                csv = df.to_csv(index=False)
+                st.download_button(
+                    label="📥 Download CSV",
+                    data=csv,
+                    file_name=f"options_data_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv",
+                    mime="text/csv"
+                )
+            
+            with tab3:
+                st.subheader("📈 Visual Analysis")
+                
+                # Find numeric columns for plotting
+                numeric_cols = df.select_dtypes(include=[np.number]).columns.tolist()
+                
+                if len(numeric_cols) >= 2:
+                    col1, col2 = st.columns(2)
+                    
+                    with col1:
+                        x_col = st.selectbox("X-axis:", numeric_cols, index=0)
+                    with col2:
+                        y_col = st.selectbox("Y-axis:", numeric_cols, index=1 if len(numeric_cols) > 1 else 0)
+                    
+                    if x_col != y_col:
+                        # Create scatter plot
+                        plot_df = df[[x_col, y_col]].dropna()
+                        if not plot_df.empty:
+                            st.scatter_chart(plot_df.set_index(x_col), use_container_width=True)
+                    else:
+                        st.info("Please select different columns for X and Y axis")
+                else:
+                    st.info("Not enough numeric columns for plotting")
     
-    support, resistance, max_pain = calculate_support_resistance_maxpain(df)
-    
-    level_cols = st.columns(3)
-    with level_cols[0]:
-        if support:
-            st.success(f"🟢 Support: {support:.0f}")
-        else:
-            st.info("🟢 Support: N/A")
-    with level_cols[1]:
-        if resistance:
-            st.error(f"🔴 Resistance: {resistance:.0f}")
-        else:
-            st.info("🔴 Resistance: N/A")
-    with level_cols[2]:
-        if max_pain:
-            st.info(f"💰 Max Pain: {max_pain:.0f}")
-        else:
-            st.info("💰 Max Pain: N/A")
-    
-    try:
-        display_df = df.copy()
-        
-        for col in display_df.columns:
-            if display_df[col].dtype in ['float64', 'int64']:
-                if 'OI' in col.upper() or 'VOLUME' in col.upper():
-                    display_df[col] = display_df[col].apply(
-                        lambda x: f"{x:,.0f}" if pd.notnull(x) and x != 0 else ""
-                    )
-                elif any(term in col.upper() for term in ['IV', 'PRICE', 'LTP', 'PREMIUM']):
-                    display_df[col] = display_df[col].apply(
-                        lambda x: f"{x:.2f}" if pd.notnull(x) else ""
-                    )
-        
-        st.dataframe(display_df, use_container_width=True, height=400)
-        
-    except Exception:
-        st.dataframe(df, use_container_width=True, height=400)
-
-def display_general_data(df: pd.DataFrame, title: str):
-    """Display general data"""
-    if df.empty:
-        return
-        
-    st.header(f"📊 {title}")
-    
-    display_df = df.copy()
-    
-    try:
-        for col in display_df.columns:
-            if display_df[col].dtype in ['float64', 'int64']:
-                max_val = display_df[col].max()
-                if pd.notnull(max_val):
-                    if max_val > 10000000:
-                        display_df[col] = display_df[col].apply(
-                            lambda x: f"{x/10000000:.1f}Cr" if pd.notnull(x) and x != 0 else ""
-                        )
-                    elif max_val > 1000000:
-                        display_df[col] = display_df[col].apply(
-                            lambda x: f"{x/1000000:.2f}M" if pd.notnull(x) and x != 0 else ""
-                        )
-                    elif max_val > 1000:
-                        display_df[col] = display_df[col].apply(
-                            lambda x: f"{x/1000:.1f}K" if pd.notnull(x) and x != 0 else ""
-                        )
-    except:
-        pass
-    
-    st.dataframe(display_df, use_container_width=True, height=300)
-
-# Sidebar
-st.sidebar.title("🎛️ Dashboard Controls")
-
-# File upload
-uploaded_file = st.sidebar.file_uploader(
-    "📂 Upload Excel File", 
-    type=['xlsx', 'xlsm']
-)
-
-if uploaded_file:
-    with open("temp_" + uploaded_file.name, "wb") as f:
-        f.write(uploaded_file.getbuffer())
-    EXCEL_FILE = "temp_" + uploaded_file.name
-    excel_manager.excel_file = EXCEL_FILE
-
-auto_refresh = st.sidebar.checkbox("🔄 Auto Refresh", value=True)
-refresh_interval = st.sidebar.slider("Refresh Interval (seconds)", 1, 60, REFRESH_INTERVAL)
-
-if st.sidebar.button("🔄 Refresh Now", type="primary"):
-    with st.spinner("Refreshing data..."):
-        st.session_state.excel_data = {}
-        st.session_state.file_last_modified = None
-        excel_manager.fetch_all_data()
-    st.rerun()
-
-file_exists = excel_manager.check_file_exists()
-st.sidebar.metric("📄 File Status", 
-                 "🟢 Found" if file_exists else "🔴 Not Found")
-
-st.sidebar.metric("📶 Data Status", 
-                 "🟢 Loaded" if st.session_state.excel_data else "🔴 No Data")
-
-if st.session_state.last_update:
-    st.sidebar.metric("⏰ Last Update", 
-                     st.session_state.last_update.strftime('%H:%M:%S'))
-
-if st.session_state.excel_data:
-    with st.sidebar.expander("📋 Available Sheets"):
-        for sheet in st.session_state.excel_data.keys():
-            st.write(f"✅ {sheet}")
-
-# Main Dashboard
-st.title("⚡ Live Options Summary Dashboard")
-st.caption(f"Reading from: {EXCEL_FILE} | {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
-
-# Load initial data
-if not st.session_state.excel_data:
-    with st.spinner("Loading data..."):
-        excel_manager.fetch_all_data()
-
-# Display PCR
-if "PCR & OI Chart" in st.session_state.excel_data:
-    display_pcr_data(st.session_state.excel_data["PCR & OI Chart"])
-else:
-    st.info("📊 PCR data not available")
-
-st.divider()
-
-# Display Options
-st.header("📌 Index Options Summary")
-
-col1, col2 = st.columns(2)
-
-with col1:
-    if "OC_1" in st.session_state.excel_data:
-        display_option_chain(st.session_state.excel_data["OC_1"], "Nifty Options")
     else:
-        st.info("📈 Nifty data not available")
+        # Welcome screen
+        st.info("👋 Welcome! Please load your Excel file using the sidebar options.")
+        
+        st.markdown("""
+        ### 📋 Instructions:
+        1. **Choose data source method** (File Path or File Upload)
+        2. **Provide your Excel file** with options data
+        3. **Click Load Data** to analyze the file
+        
+        ### 📊 Expected Data Format:
+        Your Excel file should contain columns like:
+        - Strike prices
+        - Call/Put Open Interest (CE_OI, PE_OI)
+        - Call/Put Volume 
+        - Last Traded Price (LTP)
+        - Implied Volatility (IV)
+        """)
+        
+        # Sample data preview
+        sample_data = pd.DataFrame({
+            'Strike': [22500, 22550, 22600],
+            'CE_OI': [1500, 2300, 3400],
+            'PE_OI': [1200, 1800, 2100],
+            'CE_LTP': [245.5, 195.3, 148.7],
+            'PE_LTP': [38.4, 58.9, 85.3]
+        })
+        st.subheader("📊 Sample Data Format:")
+        st.dataframe(sample_data, use_container_width=True)
 
-with col2:
-    if "OC_2" in st.session_state.excel_data:
-        display_option_chain(st.session_state.excel_data["OC_2"], "BankNifty Options")
-    else:
-        st.info("🏦 BankNifty data not available")
-
-st.divider()
-
-# Other sheets
-other_sheets = [
-    "Dashboard",
-    "Sector Dashboard", 
-    "Screener",
-    "FII DII Data",
-    "Fiis&Diis Dashboard",
-    "Globlemarket"
-]
-
-for sheet in other_sheets:
-    if sheet in st.session_state.excel_data:
-        display_general_data(st.session_state.excel_data[sheet], sheet)
-        st.divider()
-
-# Auto refresh
-if auto_refresh and file_exists:
-    time.sleep(refresh_interval)
-    current_time = excel_manager.get_file_modified_time()
-    if (current_time and 
-        st.session_state.file_last_modified and 
-        current_time > st.session_state.file_last_modified):
-        st.rerun()
-
-st.markdown("---")
-st.markdown("📊 **Live Options Dashboard** | Direct Excel Reading")
-st.markdown("💡 **Tip**: Save Excel file to see updates")
+if __name__ == "__main__":
+    main()
