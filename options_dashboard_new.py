@@ -4,402 +4,479 @@ import numpy as np
 from datetime import datetime
 import os
 
-st.set_page_config(page_title="Stock Trading Dashboard", page_icon="📈", layout="wide")
+st.set_page_config(page_title="Professional Trading Dashboard", page_icon="⚡", layout="wide")
 
-# Trading-focused CSS
+# Professional trading CSS
 st.markdown("""
 <style>
-.buy-signal {
-    background: linear-gradient(135deg, #00b09b, #96c93d);
+.trading-header {
+    background: linear-gradient(90deg, #1e3c72 0%, #2a5298 100%);
+    color: white;
+    padding: 1rem;
+    border-radius: 8px;
+    text-align: center;
+    margin-bottom: 2rem;
+}
+.strategy-card {
+    border: 2px solid #007bff;
+    border-radius: 10px;
+    padding: 1.5rem;
+    margin: 1rem 0;
+    background: linear-gradient(135deg, #f8f9fa 0%, #e9ecef 100%);
+}
+.long-signal {
+    background: linear-gradient(135deg, #28a745 0%, #20c997 100%);
     color: white;
     padding: 1rem;
     border-radius: 8px;
     margin: 0.5rem 0;
-    text-align: center;
 }
-.sell-signal {
-    background: linear-gradient(135deg, #ee0979, #ff6a00);
+.short-signal {
+    background: linear-gradient(135deg, #dc3545 0%, #fd7e14 100%);
     color: white;
     padding: 1rem;
     border-radius: 8px;
     margin: 0.5rem 0;
-    text-align: center;
 }
-.hold-signal {
-    background: linear-gradient(135deg, #667eea, #764ba2);
+.neutral-signal {
+    background: linear-gradient(135deg, #6c757d 0%, #adb5bd 100%);
     color: white;
     padding: 1rem;
     border-radius: 8px;
     margin: 0.5rem 0;
-    text-align: center;
 }
-.sector-card {
-    border: 1px solid #ddd;
-    border-radius: 8px;
-    padding: 1rem;
-    margin: 0.5rem 0;
-    background-color: #f8f9fa;
-}
-.metric-grid {
+.pcr-bullish { background: #d4edda; color: #155724; padding: 0.5rem; border-radius: 5px; }
+.pcr-bearish { background: #f8d7da; color: #721c24; padding: 0.5rem; border-radius: 5px; }
+.pcr-neutral { background: #fff3cd; color: #856404; padding: 0.5rem; border-radius: 5px; }
+.metrics-grid {
     display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
     gap: 1rem;
     margin: 1rem 0;
 }
 </style>
 """, unsafe_allow_html=True)
 
-def read_excel_trading_sheets(file_path):
-    """Read specific trading-focused sheets"""
-    key_sheets = [
-        'Dashboard', 'Stock Dashboard', 'Sector Dashboard', 
-        'OC_1', 'OC_2', 'Screener', 'PCR & OI Chart'
-    ]
-    
+def read_all_trading_sheets(file_path):
+    """Read all trading-relevant sheets from Excel"""
     try:
         excel_file = pd.ExcelFile(file_path)
         data_dict = {}
         
-        for sheet_name in key_sheets:
-            if sheet_name in excel_file.sheet_names:
-                try:
-                    df = pd.read_excel(file_path, sheet_name=sheet_name)
-                    if not df.empty:
-                        data_dict[sheet_name] = df
-                        st.success(f"Loaded {sheet_name}: {len(df)} rows")
-                except Exception as e:
-                    st.warning(f"Could not read {sheet_name}: {str(e)}")
+        # Read all available sheets
+        for sheet_name in excel_file.sheet_names:
+            try:
+                df = pd.read_excel(file_path, sheet_name=sheet_name)
+                if not df.empty:
+                    data_dict[sheet_name] = df
+                    st.info(f"Loaded {sheet_name}: {len(df)} rows, {len(df.columns)} cols")
+            except Exception as e:
+                st.warning(f"Skipped {sheet_name}: {str(e)}")
         
         return data_dict
     except Exception as e:
         st.error(f"Error reading Excel: {str(e)}")
         return {}
 
-def analyze_stock_signals(df):
-    """Analyze stocks for buy/sell/hold signals"""
-    signals = {
-        'strong_buy': [],
-        'buy': [],
-        'hold': [],
-        'sell': [],
-        'strong_sell': []
+def extract_pcr_strategy(pcr_df):
+    """Extract PCR-based trading strategy"""
+    pcr_strategy = {}
+    
+    try:
+        # Look for PCR values
+        for col in pcr_df.columns:
+            if 'PCR' in str(col).upper():
+                pcr_values = pd.to_numeric(pcr_df[col], errors='coerce').dropna()
+                if not pcr_values.empty:
+                    current_pcr = pcr_values.iloc[-1]
+                    
+                    if current_pcr > 1.5:
+                        signal = "STRONG_BEARISH"
+                        strategy = "Consider PUT buying or short positions"
+                        confidence = "HIGH"
+                    elif current_pcr > 1.2:
+                        signal = "BEARISH"
+                        strategy = "Bias towards PUT positions"
+                        confidence = "MEDIUM"
+                    elif current_pcr < 0.6:
+                        signal = "STRONG_BULLISH"
+                        strategy = "Consider CALL buying or long positions"
+                        confidence = "HIGH"
+                    elif current_pcr < 0.8:
+                        signal = "BULLISH"
+                        strategy = "Bias towards CALL positions"
+                        confidence = "MEDIUM"
+                    else:
+                        signal = "NEUTRAL"
+                        strategy = "Range-bound trading or straddle"
+                        confidence = "LOW"
+                    
+                    pcr_strategy[col] = {
+                        'value': current_pcr,
+                        'signal': signal,
+                        'strategy': strategy,
+                        'confidence': confidence
+                    }
+        
+        return pcr_strategy
+    except Exception as e:
+        st.warning(f"PCR analysis error: {e}")
+        return {}
+
+def extract_stock_strategies(dashboard_df):
+    """Extract stock trading strategies from dashboard"""
+    strategies = {
+        'long_candidates': [],
+        'short_candidates': [],
+        'breakout_stocks': [],
+        'high_volume_plays': []
     }
     
     try:
         # Find relevant columns
-        symbol_cols = [col for col in df.columns if any(term in str(col).upper() for term in ['SYMBOL', 'STOCK', 'NAME'])]
-        change_cols = [col for col in df.columns if any(term in str(col).upper() for term in ['CHANGE', '%', 'CHG'])]
-        volume_cols = [col for col in df.columns if 'VOLUME' in str(col).upper()]
-        oi_cols = [col for col in df.columns if 'OI' in str(col).upper()]
+        symbol_cols = [col for col in dashboard_df.columns if any(term in str(col).upper() for term in ['SYMBOL', 'STOCK', 'NAME'])]
+        change_cols = [col for col in dashboard_df.columns if any(term in str(col).upper() for term in ['CHANGE', '%'])]
+        volume_cols = [col for col in dashboard_df.columns if 'VOLUME' in str(col).upper()]
+        ltp_cols = [col for col in dashboard_df.columns if 'LTP' in str(col).upper()]
         
         if not symbol_cols or not change_cols:
-            return signals
+            return strategies
         
         symbol_col = symbol_cols[0]
         change_col = change_cols[0]
         
         # Clean data
-        analysis_df = df[[symbol_col, change_col]].copy()
+        analysis_df = dashboard_df[[symbol_col, change_col]].copy()
         if volume_cols:
-            analysis_df['Volume'] = df[volume_cols[0]]
-        if oi_cols:
-            analysis_df['OI'] = df[oi_cols[0]]
+            analysis_df['Volume'] = pd.to_numeric(dashboard_df[volume_cols[0]], errors='coerce')
+        if ltp_cols:
+            analysis_df['LTP'] = pd.to_numeric(dashboard_df[ltp_cols[0]], errors='coerce')
         
         analysis_df[change_col] = pd.to_numeric(analysis_df[change_col], errors='coerce')
         analysis_df = analysis_df.dropna()
         
+        # Strategy classification
         for _, row in analysis_df.iterrows():
             symbol = row[symbol_col]
             change = row[change_col]
+            volume = row.get('Volume', 0)
+            ltp = row.get('LTP', 0)
             
-            # Trading signals based on change percentage
-            if change > 5:
-                signals['strong_buy'].append((symbol, change))
-            elif change > 2:
-                signals['buy'].append((symbol, change))
-            elif change > -2:
-                signals['hold'].append((symbol, change))
-            elif change > -5:
-                signals['sell'].append((symbol, change))
-            else:
-                signals['strong_sell'].append((symbol, change))
+            # Long candidates (strong bullish momentum)
+            if change > 3:
+                strategies['long_candidates'].append({
+                    'symbol': symbol,
+                    'change': change,
+                    'volume': volume,
+                    'ltp': ltp,
+                    'strategy': f"LONG at {ltp:.2f}, Target: {ltp * 1.05:.2f}, SL: {ltp * 0.97:.2f}"
+                })
+            
+            # Short candidates (strong bearish momentum)
+            elif change < -3:
+                strategies['short_candidates'].append({
+                    'symbol': symbol,
+                    'change': change,
+                    'volume': volume,
+                    'ltp': ltp,
+                    'strategy': f"SHORT at {ltp:.2f}, Target: {ltp * 0.95:.2f}, SL: {ltp * 1.03:.2f}"
+                })
+            
+            # Breakout stocks (moderate momentum with volume)
+            elif 1.5 < abs(change) < 3 and volume > 100000:
+                strategies['breakout_stocks'].append({
+                    'symbol': symbol,
+                    'change': change,
+                    'volume': volume,
+                    'ltp': ltp,
+                    'strategy': f"BREAKOUT play - Watch for continuation"
+                })
+            
+            # High volume plays
+            if volume > 500000:
+                strategies['high_volume_plays'].append({
+                    'symbol': symbol,
+                    'change': change,
+                    'volume': volume,
+                    'ltp': ltp
+                })
         
-        # Sort by absolute change
-        for signal_type in signals:
-            signals[signal_type] = sorted(signals[signal_type], key=lambda x: abs(x[1]), reverse=True)[:10]
+        # Sort by performance
+        for strategy_type in ['long_candidates', 'short_candidates']:
+            strategies[strategy_type] = sorted(
+                strategies[strategy_type], 
+                key=lambda x: abs(x['change']), 
+                reverse=True
+            )[:10]
         
-        return signals
+        return strategies
     
     except Exception as e:
-        st.warning(f"Error analyzing stock signals: {e}")
-        return signals
+        st.warning(f"Stock strategy analysis error: {e}")
+        return strategies
 
-def analyze_options_data(nifty_df, banknifty_df):
-    """Analyze Nifty and Bank Nifty options data"""
-    options_summary = {}
-    
-    for name, df in [('Nifty', nifty_df), ('Bank Nifty', banknifty_df)]:
-        if df is not None and not df.empty:
-            summary = {}
-            
-            # Find PCR data
-            call_oi_cols = [col for col in df.columns if 'CE' in str(col).upper() and 'OI' in str(col).upper() and 'CHANGE' not in str(col).upper()]
-            put_oi_cols = [col for col in df.columns if 'PE' in str(col).upper() and 'OI' in str(col).upper() and 'CHANGE' not in str(col).upper()]
-            
-            if call_oi_cols and put_oi_cols:
-                call_oi = pd.to_numeric(df[call_oi_cols[0]], errors='coerce').fillna(0).sum()
-                put_oi = pd.to_numeric(df[put_oi_cols[0]], errors='coerce').fillna(0).sum()
-                
-                if call_oi > 0:
-                    pcr = put_oi / call_oi
-                    summary['pcr'] = pcr
-                    summary['call_oi'] = call_oi
-                    summary['put_oi'] = put_oi
-                    
-                    # Trading signal based on PCR
-                    if pcr > 1.5:
-                        summary['signal'] = 'STRONG_BEARISH'
-                    elif pcr > 1.2:
-                        summary['signal'] = 'BEARISH'
-                    elif pcr < 0.6:
-                        summary['signal'] = 'STRONG_BULLISH'
-                    elif pcr < 0.8:
-                        summary['signal'] = 'BULLISH'
-                    else:
-                        summary['signal'] = 'NEUTRAL'
-            
-            # Find strike prices for support/resistance
-            strike_cols = [col for col in df.columns if 'STRIKE' in str(col).upper()]
-            if strike_cols and call_oi_cols and put_oi_cols:
-                try:
-                    strike_col = strike_cols[0]
-                    call_col = call_oi_cols[0]
-                    put_col = put_oi_cols[0]
-                    
-                    clean_df = df[[strike_col, call_col, put_col]].copy()
-                    clean_df[call_col] = pd.to_numeric(clean_df[call_col], errors='coerce')
-                    clean_df[put_col] = pd.to_numeric(clean_df[put_col], errors='coerce')
-                    clean_df = clean_df.dropna()
-                    
-                    if not clean_df.empty:
-                        resistance_idx = clean_df[call_col].idxmax()
-                        support_idx = clean_df[put_col].idxmax()
-                        
-                        summary['resistance'] = clean_df.loc[resistance_idx, strike_col]
-                        summary['support'] = clean_df.loc[support_idx, strike_col]
-                except:
-                    pass
-            
-            options_summary[name] = summary
-    
-    return options_summary
-
-def analyze_sector_performance(df):
-    """Analyze sector performance for trading opportunities"""
-    sector_analysis = {}
+def extract_sector_strategies(sector_df):
+    """Extract sector-wise trading strategies"""
+    sector_strategies = {}
     
     try:
-        # Find sector and performance columns
-        sector_cols = [col for col in df.columns if 'SECTOR' in str(col).upper()]
-        change_cols = [col for col in df.columns if any(term in str(col).upper() for term in ['CHANGE', '%', 'CHG'])]
-        symbol_cols = [col for col in df.columns if any(term in str(col).upper() for term in ['SYMBOL', 'STOCK', 'NAME'])]
+        # Find sector columns
+        sector_cols = [col for col in sector_df.columns if 'SECTOR' in str(col).upper()]
+        change_cols = [col for col in sector_df.columns if any(term in str(col).upper() for term in ['CHANGE', '%'])]
         
         if not sector_cols or not change_cols:
-            return sector_analysis
+            return sector_strategies
         
         sector_col = sector_cols[0]
         change_col = change_cols[0]
         
         # Group by sector
-        sector_df = df.groupby(sector_col).agg({
-            change_col: 'mean',
-            symbol_cols[0] if symbol_cols else sector_col: 'count'
-        }).reset_index()
+        sector_performance = sector_df.groupby(sector_col)[change_col].mean().sort_values(ascending=False)
         
-        sector_df.columns = ['Sector', 'Avg_Change', 'Stock_Count']
-        sector_df = sector_df.sort_values('Avg_Change', ascending=False)
-        
-        for _, row in sector_df.iterrows():
-            sector = row['Sector']
-            avg_change = row['Avg_Change']
+        for sector, avg_change in sector_performance.items():
+            if avg_change > 2:
+                signal = "SECTOR_ROTATION_BUY"
+                strategy = f"Rotate INTO {sector} - Strong outperformance"
+                confidence = "HIGH"
+            elif avg_change > 1:
+                signal = "SECTOR_OVERWEIGHT"
+                strategy = f"Overweight {sector} positions"
+                confidence = "MEDIUM"
+            elif avg_change < -2:
+                signal = "SECTOR_ROTATION_SELL"
+                strategy = f"Rotate OUT OF {sector} - Underperforming"
+                confidence = "HIGH"
+            elif avg_change < -1:
+                signal = "SECTOR_UNDERWEIGHT"
+                strategy = f"Underweight {sector} positions"
+                confidence = "MEDIUM"
+            else:
+                signal = "SECTOR_NEUTRAL"
+                strategy = f"Maintain neutral {sector} allocation"
+                confidence = "LOW"
             
-            # Get individual stocks in this sector
-            sector_stocks = df[df[sector_col] == sector]
-            if symbol_cols and change_cols:
-                stocks_list = []
-                for _, stock_row in sector_stocks.iterrows():
-                    stocks_list.append((stock_row[symbol_cols[0]], stock_row[change_col]))
-                
-                # Sort stocks by performance
-                stocks_list = sorted(stocks_list, key=lambda x: x[1], reverse=True)
-                
-                sector_analysis[sector] = {
-                    'avg_change': avg_change,
-                    'stock_count': row['Stock_Count'],
-                    'top_stocks': stocks_list[:5],
-                    'signal': 'BUY' if avg_change > 1 else 'SELL' if avg_change < -1 else 'HOLD'
-                }
+            sector_strategies[sector] = {
+                'performance': avg_change,
+                'signal': signal,
+                'strategy': strategy,
+                'confidence': confidence
+            }
         
-        return sector_analysis
+        return sector_strategies
     
     except Exception as e:
-        st.warning(f"Error analyzing sectors: {e}")
+        st.warning(f"Sector strategy analysis error: {e}")
         return {}
 
-def display_trading_dashboard(stock_signals, options_summary, sector_analysis):
-    """Display comprehensive trading dashboard"""
+def extract_screener_opportunities(screener_df):
+    """Extract opportunities from screener data"""
+    opportunities = []
     
-    st.title("Stock Trading Command Center")
-    st.caption(f"Live Analysis - {datetime.now().strftime('%H:%M:%S')}")
-    
-    # Options Market Overview
-    st.header("Options Market Analysis")
-    
-    if options_summary:
-        cols = st.columns(len(options_summary))
+    try:
+        # Look for key screening criteria
+        symbol_cols = [col for col in screener_df.columns if any(term in str(col).upper() for term in ['SYMBOL', 'STOCK'])]
+        if not symbol_cols:
+            return opportunities
         
-        for i, (index_name, data) in enumerate(options_summary.items()):
-            with cols[i]:
-                signal = data.get('signal', 'NEUTRAL')
-                pcr = data.get('pcr', 0)
-                
-                if 'BULLISH' in signal:
-                    card_class = 'buy-signal'
-                elif 'BEARISH' in signal:
-                    card_class = 'sell-signal'
-                else:
-                    card_class = 'hold-signal'
-                
-                st.markdown(f"""
-                <div class="{card_class}">
-                    <h3>{index_name}</h3>
-                    <h4>{signal}</h4>
-                    <p>PCR: {pcr:.3f}</p>
-                </div>
-                """, unsafe_allow_html=True)
-                
-                if 'support' in data and 'resistance' in data:
-                    st.success(f"Support: {data['support']:,.0f}")
-                    st.error(f"Resistance: {data['resistance']:,.0f}")
+        symbol_col = symbol_cols[0]
+        
+        # Add all screened stocks as opportunities
+        for _, row in screener_df.iterrows():
+            symbol = row[symbol_col]
+            opportunity = {'symbol': symbol}
+            
+            # Add all available metrics
+            for col in screener_df.columns:
+                if col != symbol_col:
+                    opportunity[col] = row[col]
+            
+            opportunities.append(opportunity)
+        
+        return opportunities[:20]  # Top 20 opportunities
     
-    # Stock Trading Signals
-    st.header("Stock Trading Signals")
+    except Exception as e:
+        st.warning(f"Screener analysis error: {e}")
+        return []
+
+def display_professional_dashboard(data_dict):
+    """Display professional trading dashboard"""
     
-    signal_tabs = st.tabs(['Strong Buy', 'Buy', 'Hold', 'Sell', 'Strong Sell'])
+    st.markdown("""
+    <div class="trading-header">
+        <h1>Professional Trading Strategy Dashboard</h1>
+        <p>Data-Driven Trading Decisions | Live Market Analysis</p>
+    </div>
+    """, unsafe_allow_html=True)
     
-    signal_types = ['strong_buy', 'buy', 'hold', 'sell', 'strong_sell']
-    signal_colors = ['success', 'info', 'warning', 'error', 'error']
+    # Extract strategies from different sheets
+    pcr_strategy = {}
+    stock_strategies = {}
+    sector_strategies = {}
+    screener_opportunities = []
     
-    for i, (tab, signal_type, color) in enumerate(zip(signal_tabs, signal_types, signal_colors)):
-        with tab:
-            stocks = stock_signals.get(signal_type, [])
-            if stocks:
-                st.subheader(f"{signal_type.replace('_', ' ').title()} Signals ({len(stocks)} stocks)")
-                
-                for stock, change in stocks[:10]:
-                    if color == 'success':
-                        st.success(f"{stock}: +{change:.2f}%")
-                    elif color == 'error':
-                        st.error(f"{stock}: {change:.2f}%")
-                    elif color == 'warning':
-                        st.warning(f"{stock}: {change:.2f}%")
-                    else:
-                        st.info(f"{stock}: {change:.2f}%")
+    if 'PCR & OI Chart' in data_dict:
+        pcr_strategy = extract_pcr_strategy(data_dict['PCR & OI Chart'])
+    
+    if 'Dashboard' in data_dict or 'Stock Dashboard' in data_dict:
+        dashboard_data = data_dict.get('Stock Dashboard', data_dict.get('Dashboard'))
+        stock_strategies = extract_stock_strategies(dashboard_data)
+    
+    if 'Sector Dashboard' in data_dict:
+        sector_strategies = extract_sector_strategies(data_dict['Sector Dashboard'])
+    
+    if 'Screener' in data_dict:
+        screener_opportunities = extract_screener_opportunities(data_dict['Screener'])
+    
+    # PCR Strategy Section
+    if pcr_strategy:
+        st.header("Options Market Strategy")
+        
+        for pcr_name, pcr_data in pcr_strategy.items():
+            signal = pcr_data['signal']
+            
+            if 'BULLISH' in signal:
+                card_class = 'pcr-bullish'
+            elif 'BEARISH' in signal:
+                card_class = 'pcr-bearish'
             else:
-                st.info(f"No {signal_type.replace('_', ' ')} signals detected")
+                card_class = 'pcr-neutral'
+            
+            st.markdown(f"""
+            <div class="strategy-card">
+                <h4>{pcr_name} Strategy</h4>
+                <div class="{card_class}">
+                    <strong>Signal:</strong> {signal}<br>
+                    <strong>PCR Value:</strong> {pcr_data['value']:.3f}<br>
+                    <strong>Strategy:</strong> {pcr_data['strategy']}<br>
+                    <strong>Confidence:</strong> {pcr_data['confidence']}
+                </div>
+            </div>
+            """, unsafe_allow_html=True)
     
-    # Sector Analysis
-    if sector_analysis:
-        st.header("Sector Trading Opportunities")
+    # Stock Strategy Section
+    if stock_strategies:
+        st.header("Stock Trading Strategies")
         
-        # Split sectors into columns
+        strategy_tabs = st.tabs(['Long Candidates', 'Short Candidates', 'Breakout Stocks', 'High Volume'])
+        
+        with strategy_tabs[0]:
+            long_candidates = stock_strategies.get('long_candidates', [])
+            if long_candidates:
+                st.subheader(f"Top {len(long_candidates)} Long Opportunities")
+                for stock in long_candidates:
+                    st.markdown(f"""
+                    <div class="long-signal">
+                        <strong>{stock['symbol']}</strong> | Change: +{stock['change']:.2f}%<br>
+                        {stock['strategy']}<br>
+                        Volume: {stock['volume']:,.0f}
+                    </div>
+                    """, unsafe_allow_html=True)
+            else:
+                st.info("No strong long candidates identified")
+        
+        with strategy_tabs[1]:
+            short_candidates = stock_strategies.get('short_candidates', [])
+            if short_candidates:
+                st.subheader(f"Top {len(short_candidates)} Short Opportunities")
+                for stock in short_candidates:
+                    st.markdown(f"""
+                    <div class="short-signal">
+                        <strong>{stock['symbol']}</strong> | Change: {stock['change']:.2f}%<br>
+                        {stock['strategy']}<br>
+                        Volume: {stock['volume']:,.0f}
+                    </div>
+                    """, unsafe_allow_html=True)
+            else:
+                st.info("No strong short candidates identified")
+        
+        with strategy_tabs[2]:
+            breakout_stocks = stock_strategies.get('breakout_stocks', [])
+            if breakout_stocks:
+                st.subheader("Breakout Opportunities")
+                for stock in breakout_stocks:
+                    st.markdown(f"""
+                    <div class="neutral-signal">
+                        <strong>{stock['symbol']}</strong> | Change: {stock['change']:+.2f}%<br>
+                        {stock['strategy']}<br>
+                        Volume: {stock['volume']:,.0f}
+                    </div>
+                    """, unsafe_allow_html=True)
+        
+        with strategy_tabs[3]:
+            high_volume = stock_strategies.get('high_volume_plays', [])[:10]
+            if high_volume:
+                st.subheader("High Volume Stocks to Watch")
+                for stock in high_volume:
+                    st.write(f"**{stock['symbol']}** | Change: {stock['change']:+.2f}% | Volume: {stock['volume']:,.0f}")
+    
+    # Sector Strategy Section
+    if sector_strategies:
+        st.header("Sector Rotation Strategy")
+        
         sector_cols = st.columns(2)
-        sectors_list = list(sector_analysis.items())
+        sectors_list = list(sector_strategies.items())
         
         for i, (sector, data) in enumerate(sectors_list):
             col = sector_cols[i % 2]
             
             with col:
-                signal = data.get('signal', 'HOLD')
-                avg_change = data.get('avg_change', 0)
+                signal = data['signal']
                 
-                if signal == 'BUY':
-                    signal_class = 'buy-signal'
-                elif signal == 'SELL':
-                    signal_class = 'sell-signal'
+                if 'BUY' in signal:
+                    card_class = 'long-signal'
+                elif 'SELL' in signal:
+                    card_class = 'short-signal'
                 else:
-                    signal_class = 'hold-signal'
+                    card_class = 'neutral-signal'
                 
                 st.markdown(f"""
-                <div class="sector-card">
-                    <h4>{sector}</h4>
-                    <div class="{signal_class}" style="padding: 0.5rem; margin: 0.5rem 0;">
-                        <strong>{signal}</strong> - {avg_change:.2f}%
-                    </div>
+                <div class="{card_class}">
+                    <h5>{sector}</h5>
+                    Performance: {data['performance']:+.2f}%<br>
+                    {data['strategy']}<br>
+                    Confidence: {data['confidence']}
                 </div>
                 """, unsafe_allow_html=True)
-                
-                # Show top stocks in sector
-                top_stocks = data.get('top_stocks', [])
-                if top_stocks:
-                    st.write("**Top Stocks:**")
-                    for stock, change in top_stocks[:3]:
-                        if change > 0:
-                            st.success(f"{stock}: +{change:.2f}%")
-                        else:
-                            st.error(f"{stock}: {change:.2f}%")
     
-    # Quick Action Summary
-    st.header("Quick Trading Summary")
+    # Screener Opportunities
+    if screener_opportunities:
+        st.header("Screener Opportunities")
+        
+        with st.expander(f"View All {len(screener_opportunities)} Screened Stocks"):
+            screener_df = pd.DataFrame(screener_opportunities)
+            st.dataframe(screener_df, use_container_width=True)
+    
+    # Trading Summary
+    st.header("Executive Trading Summary")
     
     summary_cols = st.columns(4)
     
     with summary_cols[0]:
-        strong_buys = len(stock_signals.get('strong_buy', []))
-        st.markdown(f"""
-        <div class="buy-signal">
-            <h3>{strong_buys}</h3>
-            <p>Strong Buy Signals</p>
-        </div>
-        """, unsafe_allow_html=True)
+        long_count = len(stock_strategies.get('long_candidates', []))
+        st.metric("Long Opportunities", long_count)
     
     with summary_cols[1]:
-        buys = len(stock_signals.get('buy', []))
-        st.markdown(f"""
-        <div class="buy-signal" style="opacity: 0.8;">
-            <h3>{buys}</h3>
-            <p>Buy Signals</p>
-        </div>
-        """, unsafe_allow_html=True)
+        short_count = len(stock_strategies.get('short_candidates', []))
+        st.metric("Short Opportunities", short_count)
     
     with summary_cols[2]:
-        sells = len(stock_signals.get('sell', []))
-        st.markdown(f"""
-        <div class="sell-signal" style="opacity: 0.8;">
-            <h3>{sells}</h3>
-            <p>Sell Signals</p>
-        </div>
-        """, unsafe_allow_html=True)
+        breakout_count = len(stock_strategies.get('breakout_stocks', []))
+        st.metric("Breakout Plays", breakout_count)
     
     with summary_cols[3]:
-        strong_sells = len(stock_signals.get('strong_sell', []))
-        st.markdown(f"""
-        <div class="sell-signal">
-            <h3>{strong_sells}</h3>
-            <p>Strong Sell Signals</p>
-        </div>
-        """, unsafe_allow_html=True)
+        screener_count = len(screener_opportunities)
+        st.metric("Screener Stocks", screener_count)
 
 def main():
-    uploaded_file = st.file_uploader("Upload Trading Excel File", type=['xlsx', 'xlsm', 'xls'])
+    uploaded_file = st.file_uploader("Upload Professional Trading Excel", type=['xlsx', 'xlsm', 'xls'])
     
     if uploaded_file:
         temp_path = f"temp_{uploaded_file.name}"
         with open(temp_path, "wb") as f:
             f.write(uploaded_file.getbuffer())
         
-        with st.spinner("Analyzing trading data..."):
-            data_dict = read_excel_trading_sheets(temp_path)
+        with st.spinner("Processing professional trading data..."):
+            data_dict = read_all_trading_sheets(temp_path)
         
         try:
             os.remove(temp_path)
@@ -407,30 +484,21 @@ def main():
             pass
         
         if data_dict:
-            # Analyze stock signals
-            stock_signals = {}
-            if 'Stock Dashboard' in data_dict:
-                stock_signals = analyze_stock_signals(data_dict['Stock Dashboard'])
-            elif 'Dashboard' in data_dict:
-                stock_signals = analyze_stock_signals(data_dict['Dashboard'])
-            
-            # Analyze options
-            nifty_df = data_dict.get('OC_1')
-            banknifty_df = data_dict.get('OC_2')
-            options_summary = analyze_options_data(nifty_df, banknifty_df)
-            
-            # Analyze sectors
-            sector_analysis = {}
-            if 'Sector Dashboard' in data_dict:
-                sector_analysis = analyze_sector_performance(data_dict['Sector Dashboard'])
-            
-            # Display dashboard
-            display_trading_dashboard(stock_signals, options_summary, sector_analysis)
-            
+            display_professional_dashboard(data_dict)
         else:
-            st.error("Could not load trading data")
+            st.error("Could not process trading data")
     else:
-        st.info("Upload your Excel file to see trading signals and market analysis")
+        st.info("Upload your Excel file with professional trading sheets")
+        
+        st.markdown("""
+        ### Expected Sheets:
+        - **Dashboard/Stock Dashboard**: Stock performance data
+        - **PCR & OI Chart**: Options market sentiment
+        - **Sector Dashboard**: Sector performance metrics  
+        - **Screener**: Pre-filtered trading opportunities
+        - **Greeks**: Options Greeks analysis
+        - **FII DII Data**: Institutional flow data
+        """)
 
 if __name__ == "__main__":
     main()
