@@ -98,59 +98,38 @@ def load_data_file(file):
                 return {'CSV_Data': df}
         
         elif file_extension in ['xlsx', 'xlsm']:
-            # Try multiple methods for Excel files
-            data_dict = {}
-            
-            # Method 1: Check if Excel libraries are available
+            # Try to read Excel file directly without checking for libraries first
             try:
-                # Try importing required libraries
-                import openpyxl
-                import xlrd
+                excel_file = pd.ExcelFile(file)
+                st.info(f"📁 Found {len(excel_file.sheet_names)} sheets in Excel file")
                 
-                # If we get here, libraries are available
-                try:
-                    excel_file = pd.ExcelFile(file)
-                    st.info(f"📁 Found {len(excel_file.sheet_names)} sheets in Excel file")
-                    
-                    # Try to read each sheet individually
-                    for sheet_name in excel_file.sheet_names:
-                        try:
-                            df = pd.read_excel(file, sheet_name=sheet_name)
-                            if not df.empty:
-                                data_dict[sheet_name] = df
-                                st.success(f"✅ Loaded sheet: {sheet_name} ({len(df)} rows, {len(df.columns)} columns)")
-                            else:
-                                st.warning(f"⚠️ Sheet '{sheet_name}' is empty")
-                        except Exception as sheet_error:
-                            st.warning(f"⚠️ Could not load sheet '{sheet_name}': {str(sheet_error)}")
-                            continue
-                    
-                    if data_dict:
-                        return data_dict
-                    else:
-                        st.error("❌ No sheets could be loaded from the Excel file")
-                        return {}
+                data_dict = {}
+                # Try to read each sheet individually
+                for sheet_name in excel_file.sheet_names:
+                    try:
+                        df = pd.read_excel(file, sheet_name=sheet_name)
+                        if not df.empty:
+                            data_dict[sheet_name] = df
+                            st.success(f"✅ Loaded sheet: {sheet_name} ({len(df)} rows, {len(df.columns)} columns)")
+                        else:
+                            st.warning(f"⚠️ Sheet '{sheet_name}' is empty")
+                    except Exception as sheet_error:
+                        st.warning(f"⚠️ Could not load sheet '{sheet_name}': {str(sheet_error)}")
+                        continue
                 
-                except Exception as excel_error:
-                    st.error(f"❌ Error reading Excel file: {str(excel_error)}")
+                if data_dict:
+                    return data_dict
+                else:
+                    st.error("❌ No sheets could be loaded from the Excel file")
                     return {'excel_libraries_missing': True}
-            
+                
             except ImportError:
                 # If Excel libraries not available, return a special indicator
                 return {'excel_libraries_missing': True}
-            
             except Exception as e:
-                # Try reading first sheet only
-                try:
-                    st.warning("⚠️ Trying to read first sheet only...")
-                    df = pd.read_excel(file)
-                    if not df.empty:
-                        return {'Sheet1': df}
-                except Exception:
-                    st.error(f"""
-                    ❌ **Cannot read Excel file**: {str(e)}
-                    """)
-                    return {}
+                # If reading Excel fails for any other reason
+                st.error(f"❌ Error reading Excel file: {str(e)}")
+                return {'excel_libraries_missing': True}
         
         else:
             st.error(f"❌ Unsupported file format: {file_extension}")
@@ -472,7 +451,11 @@ def main():
                     st.session_state.install_attempted = True
                     success = install_excel_libraries()
                     if success:
-                        st.rerun()
+                        # Clear cache and try loading again
+                        load_data_file.clear()
+                        data_dict = load_data_file(uploaded_file)
+                        if 'excel_libraries_missing' not in data_dict:
+                            st.rerun()
             else:
                 st.info("Installation was attempted. If it succeeded, please restart the app.")
             
