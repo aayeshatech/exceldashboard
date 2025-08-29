@@ -16,8 +16,9 @@ if st.sidebar.checkbox("🔄 Auto Refresh (30 sec)", value=True):
     if AUTOREFRESH_AVAILABLE:
         st_autorefresh(interval=30000, key="refresh")
     else:
-        st.warning("⚠️ `streamlit-autorefresh` not installed. Run:\n\n`pip install streamlit-autorefresh`\n\nUsing fallback manual refresh.")
+        st.warning("⚠️ `streamlit-autorefresh` not installed.\n\n👉 Run: `pip install streamlit-autorefresh`\n\nUsing manual refresh instead.")
         if st.button("🔄 Refresh Now"):
+            st.cache_data.clear()
             st.experimental_rerun()
 
 # === File Path ===
@@ -29,7 +30,8 @@ def load_excel_data():
     sheet_targets = [
         "OC_1","OC_2",
         "Dashboard","Screener","Sector Dashboard",
-        "PCR & OI Chart","FII DII Data","Fiis&Diis Dashboard"
+        "PCR & OI Chart","FII DII Data","Fiis&Diis Dashboard",
+        "Globlemarket"
     ]
     data = {}
     for sheet in sheet_targets:
@@ -143,3 +145,8 @@ if "FII DII Data" in data_dict:
 if "Fiis&Diis Dashboard" in data_dict:
     st.header("📊 FII / DII Dashboard")
     st.dataframe(data_dict["Fiis&Diis Dashboard"].head(20))
+
+# === Global Market Snapshot ===
+if "Globlemarket" in data_dict:
+    st.header("🌍 Global Market Snapshot (Dow, Gold, Silver, Crude, BTC)")
+    st.dataframe(data_dict["Globlemarket"].head(10))
