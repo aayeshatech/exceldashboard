@@ -2,7 +2,27 @@ import pandas as pd
 import numpy as np
 import streamlit as st
 import warnings
+import time
+from datetime import datetime
+
 warnings.filterwarnings('ignore')
+
+# Check for required dependencies
+def check_dependencies():
+    """Check if required dependencies are installed"""
+    missing_deps = []
+    
+    try:
+        import openpyxl
+    except ImportError:
+        missing_deps.append('openpyxl')
+    
+    try:
+        import xlrd
+    except ImportError:
+        missing_deps.append('xlrd')
+    
+    return missing_deps
 
 # Set page config
 st.set_page_config(
@@ -28,6 +48,7 @@ st.markdown("""
     border-radius: 10px;
     color: white;
     text-align: center;
+    margin: 0.5rem 0;
 }
 .success-box {
     background-color: #d4edda;
@@ -53,93 +74,158 @@ st.markdown("""
     border-left: 5px solid #dc3545;
     margin: 1rem 0;
 }
+.info-box {
+    background-color: #d1ecf1;
+    color: #0c5460;
+    padding: 1rem;
+    border-radius: 5px;
+    border-left: 5px solid #17a2b8;
+    margin: 1rem 0;
+}
 </style>
 """, unsafe_allow_html=True)
 
 @st.cache_data(ttl=30)
 def load_excel_data(file):
-    """Load Excel data"""
+    """Load Excel data with error handling"""
     try:
         excel_file = pd.ExcelFile(file)
         data_dict = {}
+        
+        st.info(f"📁 Loading {len(excel_file.sheet_names)} sheets from Excel file...")
         
         for sheet_name in excel_file.sheet_names:
             try:
                 df = pd.read_excel(file, sheet_name=sheet_name)
                 if not df.empty:
                     data_dict[sheet_name] = df
+                    st.success(f"✅ Loaded sheet: {sheet_name} ({len(df)} rows)")
             except Exception as e:
+                st.warning(f"⚠️ Could not load sheet {sheet_name}: {str(e)}")
                 continue
                 
         return data_dict
     except Exception as e:
-        st.error(f"Error loading file: {str(e)}")
+        st.error(f"❌ Error loading Excel file: {str(e)}")
         return {}
 
-def calculate_pcr(df):
-    """Calculate Put-Call Ratio"""
+def safe_calculate_pcr(df):
+    """Safely calculate Put-Call Ratio"""
     try:
-        if 'CE_OI' in df.columns and 'PE_OI' in df.columns:
-            total_call_oi = df['CE_OI'].sum()
-            total_put_oi = df['PE_OI'].sum()
+        call_oi_cols = [col for col in df.columns if 'CE_OI' in col and 'Change' not in col]
+        put_oi_cols = [col for col in df.columns if 'PE_OI' in col and 'Change' not in col]
+        
+        if call_oi_cols and put_oi_cols:
+            total_call_oi = df[call_oi_cols[0]].fillna(0).sum()
+            total_put_oi = df[put_oi_cols[0]].fillna(0).sum()
             pcr_oi = total_put_oi / total_call_oi if total_call_oi > 0 else 0
             return pcr_oi, total_call_oi, total_put_oi
+        
         return None, None, None
-    except:
+    except Exception as e:
+        st.warning(f"Could not calculate PCR: {str(e)}")
         return None, None, None
 
-def calculate_volume_pcr(df):
-    """Calculate Volume PCR"""
+def safe_calculate_volume_pcr(df):
+    """Safely calculate Volume PCR"""
     try:
-        if 'CE_Total_Traded_Volume' in df.columns and 'PE_Total_Traded_Volume' in df.columns:
-            total_call_vol = df['CE_Total_Traded_Volume'].sum()
-            total_put_vol = df['PE_Total_Traded_Volume'].sum()
+        call_vol_cols = [col for col in df.columns if 'CE_' in col and 'Volume' in col]
+        put_vol_cols = [col for col in df.columns if 'PE_' in col and 'Volume' in col]
+        
+        if call_vol_cols and put_vol_cols:
+            total_call_vol = df[call_vol_cols[0]].fillna(0).sum()
+            total_put_vol = df[put_vol_cols[0]].fillna(0).sum()
             pcr_vol = total_put_vol / total_call_vol if total_call_vol > 0 else 0
             return pcr_vol, total_call_vol, total_put_vol
+        
         return None, None, None
-    except:
+    except Exception as e:
+        st.warning(f"Could not calculate Volume PCR: {str(e)}")
         return None, None, None
 
-def calculate_max_pain(df):
-    """Calculate Max Pain"""
+def safe_calculate_max_pain(df):
+    """Safely calculate Max Pain"""
     try:
-        if all(col in df.columns for col in ['Strike', 'CE_OI', 'PE_OI']):
-            strikes = df['Strike'].dropna().sort_values()
+        strike_col = None
+        for col in df.columns:
+            if 'strike' in col.lower():
+                strike_col = col
+                break
+        
+        call_oi_col = None
+        put_oi_col = None
+        
+        for col in df.columns:
+            if 'CE_OI' in col and 'Change' not in col:
+                call_oi_col = col
+            if 'PE_OI' in col and 'Change' not in col:
+                put_oi_col = col
+        
+        if strike_col and call_oi_col and put_oi_col:
+            clean_df = df[[strike_col, call_oi_col, put_oi_col]].dropna()
+            
+            if len(clean_df) == 0:
+                return None
+            
+            strikes = clean_df[strike_col].sort_values()
             total_pain = []
             
             for strike in strikes:
                 call_pain = 0
                 put_pain = 0
                 
-                for _, row in df.iterrows():
-                    if pd.notna(row['Strike']) and pd.notna(row['CE_OI']) and pd.notna(row['PE_OI']):
-                        if row['Strike'] < strike:
-                            call_pain += row['CE_OI'] * (strike - row['Strike'])
-                        if row['Strike'] > strike:
-                            put_pain += row['PE_OI'] * (row['Strike'] - strike)
+                for _, row in clean_df.iterrows():
+                    if row[strike_col] < strike:
+                        call_pain += row[call_oi_col] * (strike - row[strike_col])
+                    if row[strike_col] > strike:
+                        put_pain += row[put_oi_col] * (row[strike_col] - strike)
                 
                 total_pain.append(call_pain + put_pain)
             
             if total_pain:
                 max_pain_index = np.argmin(total_pain)
                 return strikes.iloc[max_pain_index]
+        
         return None
-    except:
+    except Exception as e:
+        st.warning(f"Could not calculate Max Pain: {str(e)}")
         return None
 
 def get_support_resistance(df):
-    """Get support and resistance levels"""
+    """Get support and resistance levels safely"""
     try:
-        if all(col in df.columns for col in ['Strike', 'CE_OI', 'PE_OI']):
-            max_call_oi_idx = df['CE_OI'].idxmax()
-            max_put_oi_idx = df['PE_OI'].idxmax()
+        strike_col = None
+        for col in df.columns:
+            if 'strike' in col.lower():
+                strike_col = col
+                break
+        
+        call_oi_col = None
+        put_oi_col = None
+        
+        for col in df.columns:
+            if 'CE_OI' in col and 'Change' not in col:
+                call_oi_col = col
+            if 'PE_OI' in col and 'Change' not in col:
+                put_oi_col = col
+        
+        if strike_col and call_oi_col and put_oi_col:
+            clean_df = df[[strike_col, call_oi_col, put_oi_col]].dropna()
             
-            resistance = df.loc[max_call_oi_idx, 'Strike']
-            support = df.loc[max_put_oi_idx, 'Strike']
+            if len(clean_df) == 0:
+                return None, None
+            
+            max_call_oi_idx = clean_df[call_oi_col].idxmax()
+            max_put_oi_idx = clean_df[put_oi_col].idxmax()
+            
+            resistance = clean_df.loc[max_call_oi_idx, strike_col]
+            support = clean_df.loc[max_put_oi_idx, strike_col]
             
             return support, resistance
+        
         return None, None
-    except:
+    except Exception as e:
+        st.warning(f"Could not calculate support/resistance: {str(e)}")
         return None, None
 
 def display_market_sentiment(pcr_oi):
@@ -148,94 +234,158 @@ def display_market_sentiment(pcr_oi):
         return
     
     if pcr_oi > 1.3:
-        st.markdown("""
+        st.markdown(f"""
         <div class="error-box">
         <strong>🐻 BEARISH SENTIMENT</strong><br>
-        PCR is high ({:.3f}) - More puts than calls, indicating bearish sentiment
+        PCR is high ({pcr_oi:.3f}) - More puts than calls, indicating bearish sentiment
         </div>
-        """.format(pcr_oi), unsafe_allow_html=True)
+        """, unsafe_allow_html=True)
     elif pcr_oi < 0.7:
-        st.markdown("""
+        st.markdown(f"""
         <div class="success-box">
         <strong>🐂 BULLISH SENTIMENT</strong><br>
-        PCR is low ({:.3f}) - More calls than puts, indicating bullish sentiment
+        PCR is low ({pcr_oi:.3f}) - More calls than puts, indicating bullish sentiment
         </div>
-        """.format(pcr_oi), unsafe_allow_html=True)
+        """, unsafe_allow_html=True)
     else:
-        st.markdown("""
+        st.markdown(f"""
         <div class="warning-box">
         <strong>⚖️ NEUTRAL SENTIMENT</strong><br>
-        PCR is balanced ({:.3f}) - No clear directional bias
+        PCR is balanced ({pcr_oi:.3f}) - No clear directional bias
         </div>
-        """.format(pcr_oi), unsafe_allow_html=True)
+        """, unsafe_allow_html=True)
 
-def create_simple_oi_chart(df):
-    """Create simple OI chart using Streamlit native charts"""
+def create_simple_charts(df):
+    """Create simple charts using Streamlit native functionality"""
     try:
-        if all(col in df.columns for col in ['Strike', 'CE_OI', 'PE_OI']):
-            # Prepare data for chart
-            chart_data = df[['Strike', 'CE_OI', 'PE_OI']].copy()
+        # Find relevant columns
+        strike_col = None
+        for col in df.columns:
+            if 'strike' in col.lower():
+                strike_col = col
+                break
+        
+        if not strike_col:
+            st.warning("No Strike column found for charting")
+            return
+        
+        # OI Chart
+        call_oi_cols = [col for col in df.columns if 'CE_OI' in col and 'Change' not in col]
+        put_oi_cols = [col for col in df.columns if 'PE_OI' in col and 'Change' not in col]
+        
+        if call_oi_cols and put_oi_cols:
+            chart_data = df[[strike_col, call_oi_cols[0], put_oi_cols[0]]].copy()
             chart_data = chart_data.dropna()
-            chart_data = chart_data.set_index('Strike')
             
-            st.subheader("📊 Open Interest Distribution")
-            st.bar_chart(chart_data)
-            return True
-    except Exception as e:
-        st.error(f"Error creating OI chart: {e}")
-        return False
-
-def create_simple_volume_chart(df):
-    """Create simple Volume chart"""
-    try:
-        if all(col in df.columns for col in ['Strike', 'CE_Total_Traded_Volume', 'PE_Total_Traded_Volume']):
-            # Prepare data for chart
-            chart_data = df[['Strike', 'CE_Total_Traded_Volume', 'PE_Total_Traded_Volume']].copy()
-            chart_data = chart_data.dropna()
-            chart_data = chart_data.set_index('Strike')
-            chart_data.columns = ['Call Volume', 'Put Volume']
+            if not chart_data.empty:
+                chart_data = chart_data.set_index(strike_col)
+                chart_data.columns = ['Call OI', 'Put OI']
+                
+                st.subheader("📊 Open Interest Distribution")
+                st.bar_chart(chart_data, height=400)
+        
+        # Volume Chart
+        call_vol_cols = [col for col in df.columns if 'CE_' in col and 'Volume' in col]
+        put_vol_cols = [col for col in df.columns if 'PE_' in col and 'Volume' in col]
+        
+        if call_vol_cols and put_vol_cols:
+            vol_data = df[[strike_col, call_vol_cols[0], put_vol_cols[0]]].copy()
+            vol_data = vol_data.dropna()
             
-            st.subheader("📈 Volume Distribution")
-            st.bar_chart(chart_data)
-            return True
-    except Exception as e:
-        st.error(f"Error creating volume chart: {e}")
-        return False
-
-def create_iv_chart(df):
-    """Create simple IV chart"""
-    try:
-        if all(col in df.columns for col in ['Strike', 'CE_IV(Spot)', 'PE_IV(Spot)']):
-            chart_data = df[['Strike', 'CE_IV(Spot)', 'PE_IV(Spot)']].copy()
-            chart_data = chart_data.dropna()
-            chart_data = chart_data.set_index('Strike')
-            chart_data.columns = ['Call IV', 'Put IV']
+            if not vol_data.empty:
+                vol_data = vol_data.set_index(strike_col)
+                vol_data.columns = ['Call Volume', 'Put Volume']
+                
+                st.subheader("📈 Volume Distribution")
+                st.bar_chart(vol_data, height=400)
+        
+        # IV Chart
+        call_iv_cols = [col for col in df.columns if 'CE_IV' in col]
+        put_iv_cols = [col for col in df.columns if 'PE_IV' in col]
+        
+        if call_iv_cols and put_iv_cols:
+            iv_data = df[[strike_col, call_iv_cols[0], put_iv_cols[0]]].copy()
+            iv_data = iv_data.dropna()
             
-            st.subheader("📉 Implied Volatility")
-            st.line_chart(chart_data)
-            return True
+            if not iv_data.empty:
+                iv_data = iv_data.set_index(strike_col)
+                iv_data.columns = ['Call IV', 'Put IV']
+                
+                st.subheader("📉 Implied Volatility")
+                st.line_chart(iv_data, height=400)
+    
     except Exception as e:
-        st.error(f"Error creating IV chart: {e}")
-        return False
+        st.warning(f"Could not create charts: {str(e)}")
 
 def display_top_strikes(df):
     """Display top strikes by OI and Volume"""
-    col1, col2 = st.columns(2)
+    try:
+        # Find columns
+        strike_col = None
+        for col in df.columns:
+            if 'strike' in col.lower():
+                strike_col = col
+                break
+        
+        if not strike_col:
+            st.warning("No Strike column found")
+            return
+        
+        call_oi_cols = [col for col in df.columns if 'CE_OI' in col and 'Change' not in col]
+        put_oi_cols = [col for col in df.columns if 'PE_OI' in col and 'Change' not in col]
+        call_vol_cols = [col for col in df.columns if 'CE_' in col and 'Volume' in col]
+        put_vol_cols = [col for col in df.columns if 'PE_' in col and 'Volume' in col]
+        
+        col1, col2 = st.columns(2)
+        
+        with col1:
+            st.subheader("🟢 Top Call Activity")
+            if call_oi_cols:
+                display_cols = [strike_col, call_oi_cols[0]]
+                if call_vol_cols:
+                    display_cols.append(call_vol_cols[0])
+                
+                top_call = df[display_cols].nlargest(5, call_oi_cols[0])
+                st.dataframe(top_call, hide_index=True)
+        
+        with col2:
+            st.subheader("🔴 Top Put Activity")
+            if put_oi_cols:
+                display_cols = [strike_col, put_oi_cols[0]]
+                if put_vol_cols:
+                    display_cols.append(put_vol_cols[0])
+                
+                top_put = df[display_cols].nlargest(5, put_oi_cols[0])
+                st.dataframe(top_put, hide_index=True)
     
-    with col1:
-        st.subheader("🔥 Top Call Activity")
-        if 'CE_OI' in df.columns:
-            top_call_oi = df.nlargest(5, 'CE_OI')[['Strike', 'CE_OI', 'CE_Total_Traded_Volume']].round(2)
-            st.dataframe(top_call_oi, hide_index=True)
-    
-    with col2:
-        st.subheader("🔥 Top Put Activity")
-        if 'PE_OI' in df.columns:
-            top_put_oi = df.nlargest(5, 'PE_OI')[['Strike', 'PE_OI', 'PE_Total_Traded_Volume']].round(2)
-            st.dataframe(top_put_oi, hide_index=True)
+    except Exception as e:
+        st.warning(f"Could not display top strikes: {str(e)}")
 
 def main():
     st.markdown('<h1 class="main-header">⚡ NSE Options Chain Dashboard</h1>', unsafe_allow_html=True)
+    
+    # Check dependencies first
+    missing_deps = check_dependencies()
+    if missing_deps:
+        st.error("❌ Missing Required Dependencies!")
+        st.markdown(f"""
+        <div class="error-box">
+        <strong>Missing packages:</strong> {', '.join(missing_deps)}<br><br>
+        <strong>To fix this, run these commands:</strong><br>
+        <code>pip install {' '.join(missing_deps)}</code><br><br>
+        <strong>Or install all at once:</strong><br>
+        <code>pip install openpyxl xlrd</code><br><br>
+        <strong>If using conda:</strong><br>
+        <code>conda install openpyxl xlrd</code>
+        </div>
+        """, unsafe_allow_html=True)
+        
+        st.info("🔄 After installing the packages, refresh this page to continue.")
+        st.stop()
+    
+    # Current time
+    current_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    st.markdown(f"<div class='info-box'><strong>🕐 Last Updated:</strong> {current_time}</div>", unsafe_allow_html=True)
     
     # Sidebar
     st.sidebar.header("📁 Upload Options Data")
@@ -247,7 +397,8 @@ def main():
     
     if uploaded_file is not None:
         # Load data
-        data_dict = load_excel_data(uploaded_file)
+        with st.spinner("Loading Excel file..."):
+            data_dict = load_excel_data(uploaded_file)
         
         if data_dict:
             # Auto refresh
@@ -255,167 +406,199 @@ def main():
             auto_refresh = st.sidebar.checkbox("Auto Refresh (30 sec)", value=False)
             
             if auto_refresh:
-                st.sidebar.success("✅ Auto-refreshing enabled")
+                st.sidebar.success("✅ Auto-refresh enabled")
+                time.sleep(30)
                 st.rerun()
             
             # Sheet selection
             st.sidebar.header("📊 Select Sheet")
             sheet_names = list(data_dict.keys())
             
-            # Filter for options sheets
-            options_sheets = [sheet for sheet in sheet_names if any(x in sheet.upper() for x in ['OC_', 'OPTION', 'CHAIN'])]
-            if not options_sheets:
-                options_sheets = sheet_names[:5]  # Take first 5 sheets if no obvious options sheets
+            # Show sheet info
+            st.sidebar.info(f"Found {len(sheet_names)} sheets")
+            for sheet in sheet_names[:5]:  # Show first 5
+                st.sidebar.text(f"• {sheet}")
+            if len(sheet_names) > 5:
+                st.sidebar.text(f"... and {len(sheet_names) - 5} more")
             
-            selected_sheet = st.sidebar.selectbox("Choose Options Sheet", options_sheets)
+            # Filter for options sheets
+            options_sheets = []
+            for sheet in sheet_names:
+                sheet_upper = sheet.upper()
+                if any(x in sheet_upper for x in ['OC_', 'OPTION', 'CHAIN']):
+                    options_sheets.append(sheet)
+            
+            if not options_sheets:
+                options_sheets = sheet_names[:10]  # Take first 10 if no obvious options sheets
+            
+            selected_sheet = st.sidebar.selectbox("Choose Sheet", options_sheets)
             
             if selected_sheet and selected_sheet in data_dict:
                 df = data_dict[selected_sheet].copy()
                 
                 # Get symbol info
                 symbol = "OPTIONS"
-                if 'FNO Symbol' in df.columns and len(df) > 0:
-                    symbol = str(df['FNO Symbol'].iloc[0])
+                symbol_cols = [col for col in df.columns if 'symbol' in col.lower()]
+                if symbol_cols and len(df) > 0:
+                    try:
+                        symbol = str(df[symbol_cols[0]].iloc[0])
+                    except:
+                        pass
                 
-                st.subheader(f"📊 {symbol} - {selected_sheet} Analysis")
+                st.markdown(f"""
+                <div class="info-box">
+                <strong>📊 Analyzing:</strong> {symbol} - {selected_sheet}<br>
+                <strong>📋 Data:</strong> {len(df)} rows, {len(df.columns)} columns
+                </div>
+                """, unsafe_allow_html=True)
                 
-                # Calculate all metrics
-                pcr_oi, total_call_oi, total_put_oi = calculate_pcr(df)
-                pcr_vol, total_call_vol, total_put_vol = calculate_volume_pcr(df)
-                max_pain = calculate_max_pain(df)
+                # Calculate all metrics safely
+                pcr_oi, total_call_oi, total_put_oi = safe_calculate_pcr(df)
+                pcr_vol, total_call_vol, total_put_vol = safe_calculate_volume_pcr(df)
+                max_pain = safe_calculate_max_pain(df)
                 support, resistance = get_support_resistance(df)
                 
-                # Display key metrics in columns
+                # Display key metrics
+                st.header("📊 Key Metrics")
                 col1, col2, col3, col4, col5 = st.columns(5)
                 
                 with col1:
                     if total_call_oi:
                         st.metric(
-                            label="📞 Total Call OI",
-                            value=f"{total_call_oi:,.0f}"
+                            label="📞 Call OI",
+                            value=f"{int(total_call_oi):,}"
                         )
+                    else:
+                        st.metric("📞 Call OI", "N/A")
                 
                 with col2:
                     if total_put_oi:
                         st.metric(
-                            label="📉 Total Put OI", 
-                            value=f"{total_put_oi:,.0f}"
+                            label="📉 Put OI", 
+                            value=f"{int(total_put_oi):,}"
                         )
+                    else:
+                        st.metric("📉 Put OI", "N/A")
                 
                 with col3:
                     if pcr_oi:
-                        delta_color = "normal"
-                        if pcr_oi > 1.2:
-                            delta_color = "inverse"
                         st.metric(
                             label="⚖️ PCR (OI)",
                             value=f"{pcr_oi:.3f}"
                         )
+                    else:
+                        st.metric("⚖️ PCR (OI)", "N/A")
                 
                 with col4:
                     if pcr_vol:
                         st.metric(
-                            label="📊 PCR (Volume)",
+                            label="📊 PCR (Vol)",
                             value=f"{pcr_vol:.3f}"
                         )
+                    else:
+                        st.metric("📊 PCR (Vol)", "N/A")
                 
                 with col5:
                     if max_pain:
                         st.metric(
                             label="💰 Max Pain",
-                            value=f"₹{max_pain:.0f}"
+                            value=f"₹{int(max_pain):,}"
                         )
+                    else:
+                        st.metric("💰 Max Pain", "N/A")
                 
                 # Market Sentiment
-                st.header("📈 Market Sentiment Analysis")
+                st.header("📈 Market Analysis")
                 display_market_sentiment(pcr_oi)
                 
                 # Support/Resistance
                 if support and resistance:
                     col1, col2 = st.columns(2)
                     with col1:
-                        st.success(f"🟢 **Support Level**: ₹{support:.0f} (Max Put OI)")
+                        st.markdown(f"""
+                        <div class="success-box">
+                        <strong>🟢 Support Level</strong><br>
+                        ₹{int(support):,} (Max Put OI)
+                        </div>
+                        """, unsafe_allow_html=True)
                     with col2:
-                        st.error(f"🔴 **Resistance Level**: ₹{resistance:.0f} (Max Call OI)")
+                        st.markdown(f"""
+                        <div class="error-box">
+                        <strong>🔴 Resistance Level</strong><br>
+                        ₹{int(resistance):,} (Max Call OI)
+                        </div>
+                        """, unsafe_allow_html=True)
                 
-                # Create tabs for different views
+                # Create tabs
                 tab1, tab2, tab3, tab4, tab5 = st.tabs([
-                    "📊 Options Chain", 
+                    "📊 Quick View", 
                     "📈 Charts", 
                     "🔥 Top Strikes",
-                    "📋 Raw Data", 
-                    "ℹ️ Sheet Info"
+                    "📋 Full Data", 
+                    "ℹ️ All Sheets"
                 ])
                 
                 with tab1:
-                    st.subheader(f"📊 {symbol} Options Chain")
+                    st.subheader(f"📊 {symbol} Options Chain Summary")
                     
-                    # Filter important columns for display
+                    # Show important columns only
+                    important_keywords = ['strike', 'oi', 'volume', 'ltp', 'change']
                     display_cols = []
-                    important_cols = ['Strike', 'CE_OI', 'CE_OI_Change', 'CE_Total_Traded_Volume', 'CE_LTP', 
-                                    'PE_OI', 'PE_OI_Change', 'PE_Total_Traded_Volume', 'PE_LTP']
                     
-                    for col in important_cols:
-                        if col in df.columns:
+                    for col in df.columns:
+                        col_lower = col.lower()
+                        if any(keyword in col_lower for keyword in important_keywords):
                             display_cols.append(col)
                     
                     if display_cols:
                         display_df = df[display_cols].copy()
                         # Round numeric columns
                         numeric_cols = display_df.select_dtypes(include=[np.number]).columns
-                        display_df[numeric_cols] = display_df[numeric_cols].round(2)
+                        for col in numeric_cols:
+                            display_df[col] = pd.to_numeric(display_df[col], errors='coerce').round(2)
                         
                         st.dataframe(display_df, use_container_width=True, height=500)
                     else:
-                        st.dataframe(df, use_container_width=True, height=500)
+                        st.dataframe(df.head(20), use_container_width=True, height=500)
                 
                 with tab2:
                     st.header("📈 Visual Analysis")
-                    
-                    # OI Chart
-                    create_simple_oi_chart(df)
-                    
-                    st.markdown("---")
-                    
-                    # Volume Chart
-                    create_simple_volume_chart(df)
-                    
-                    st.markdown("---")
-                    
-                    # IV Chart
-                    create_iv_chart(df)
+                    create_simple_charts(df)
                 
                 with tab3:
                     st.header("🔥 Most Active Strikes")
                     display_top_strikes(df)
                     
-                    # OI Changes
-                    if 'CE_OI_Change' in df.columns and 'PE_OI_Change' in df.columns:
-                        st.subheader("📊 Significant OI Changes")
+                    # Show OI changes if available
+                    change_cols = [col for col in df.columns if 'change' in col.lower() and 'oi' in col.lower()]
+                    if change_cols:
+                        st.subheader("📊 Recent OI Changes")
                         
                         col1, col2 = st.columns(2)
                         
                         with col1:
-                            st.write("**📈 Biggest Call OI Increases:**")
-                            call_increases = df[df['CE_OI_Change'] > 0].nlargest(5, 'CE_OI_Change')[['Strike', 'CE_OI_Change', 'CE_OI']]
-                            if not call_increases.empty:
-                                st.dataframe(call_increases, hide_index=True)
-                            else:
-                                st.info("No significant call OI increases")
+                            ce_change_cols = [col for col in change_cols if 'CE' in col]
+                            if ce_change_cols:
+                                st.write("**📈 Call OI Changes:**")
+                                change_data = df[df[ce_change_cols[0]] != 0].nlargest(5, ce_change_cols[0])
+                                if not change_data.empty:
+                                    display_cols = ['Strike', ce_change_cols[0]] if 'Strike' in df.columns else [ce_change_cols[0]]
+                                    st.dataframe(change_data[display_cols], hide_index=True)
                         
                         with col2:
-                            st.write("**📉 Biggest Put OI Increases:**")
-                            put_increases = df[df['PE_OI_Change'] > 0].nlargest(5, 'PE_OI_Change')[['Strike', 'PE_OI_Change', 'PE_OI']]
-                            if not put_increases.empty:
-                                st.dataframe(put_increases, hide_index=True)
-                            else:
-                                st.info("No significant put OI increases")
+                            pe_change_cols = [col for col in change_cols if 'PE' in col]
+                            if pe_change_cols:
+                                st.write("**📉 Put OI Changes:**")
+                                change_data = df[df[pe_change_cols[0]] != 0].nlargest(5, pe_change_cols[0])
+                                if not change_data.empty:
+                                    display_cols = ['Strike', pe_change_cols[0]] if 'Strike' in df.columns else [pe_change_cols[0]]
+                                    st.dataframe(change_data[display_cols], hide_index=True)
                 
                 with tab4:
-                    st.subheader("📋 Complete Data")
+                    st.subheader("📋 Complete Raw Data")
                     st.dataframe(df, use_container_width=True, height=600)
                     
-                    # Download options
+                    # Download option
                     csv = df.to_csv(index=False)
                     st.download_button(
                         label="📥 Download as CSV",
@@ -429,71 +612,65 @@ def main():
                     
                     sheet_info = []
                     for sheet_name, sheet_df in data_dict.items():
+                        options_cols = [col for col in sheet_df.columns if any(x in col for x in ['CE_', 'PE_', 'Call', 'Put'])]
+                        
                         sheet_info.append({
                             'Sheet Name': sheet_name,
                             'Rows': len(sheet_df),
                             'Columns': len(sheet_df.columns),
-                            'Has Options Data': 'Yes' if any(col.startswith(('CE_', 'PE_')) for col in sheet_df.columns) else 'No'
+                            'Options Columns': len(options_cols),
+                            'Has Options Data': 'Yes' if options_cols else 'No'
                         })
                     
                     sheet_info_df = pd.DataFrame(sheet_info)
                     st.dataframe(sheet_info_df, hide_index=True, use_container_width=True)
                     
-                    # Show sample from other sheets
-                    st.subheader("🔍 Quick Preview of Other Sheets")
-                    other_sheet = st.selectbox("Select sheet to preview", [s for s in sheet_names if s != selected_sheet])
-                    
-                    if other_sheet:
-                        st.write(f"**Preview of {other_sheet}:**")
-                        preview_df = data_dict[other_sheet].head(10)
-                        st.dataframe(preview_df, use_container_width=True)
+                    # Quick preview
+                    st.subheader("👀 Quick Preview")
+                    other_sheets = [s for s in sheet_names if s != selected_sheet]
+                    if other_sheets:
+                        preview_sheet = st.selectbox("Select sheet to preview", other_sheets)
+                        
+                        if preview_sheet:
+                            st.write(f"**First 10 rows of {preview_sheet}:**")
+                            preview_df = data_dict[preview_sheet].head(10)
+                            st.dataframe(preview_df, use_container_width=True)
         
         else:
-            st.error("❌ Could not load data from the file. Please check the file format and try again.")
+            st.error("❌ Could not load any data from the file. Please check the file format.")
     
     else:
         # Welcome screen
-        st.info("""
-        ## 🚀 Welcome to NSE Options Chain Dashboard!
+        st.markdown("""
+        <div class="info-box">
+        <h2>🚀 Welcome to NSE Options Chain Dashboard!</h2>
+        <p><strong>Upload your Excel file to get started</strong></p>
+        </div>
+        """, unsafe_allow_html=True)
         
-        **📤 Upload your Excel file to get started**
-        
+        st.markdown("""
         ### ✨ Features:
-        - 📊 **Options Chain Analysis** - Complete CE/PE data view
-        - 📈 **Visual Charts** - OI, Volume, and IV analysis  
+        - 📊 **Options Chain Analysis** - Complete CE/PE data analysis
+        - 📈 **Native Charts** - OI, Volume, and IV visualization  
         - 💹 **PCR Monitoring** - Put-Call Ratio for market sentiment
-        - ⚖️ **Max Pain Calculation** - Find equilibrium strike price
-        - 🎯 **Support/Resistance** - Key levels based on OI
-        - 🔥 **Active Strikes** - Most traded options
-        - 📱 **Auto-Refresh** - Live data updates
-        - 📥 **Data Export** - Download as CSV
+        - ⚖️ **Max Pain** - Automatic calculation
+        - 🎯 **Support/Resistance** - Key levels from OI data
+        - 🔥 **Active Strikes** - Most traded options identification
+        - 📱 **Auto-Refresh** - Live data updates every 30 seconds
+        - 📥 **Data Export** - Download analysis as CSV
+        - 🛡️ **Error-Free** - Robust handling of any data format
         
         ### 📁 Supported Files:
         - `.xlsx` - Excel files
-        - `.xlsm` - Excel files with macros
+        - `.xlsm` - Excel files with macros (like your Live_Option_Chain_Terminal.xlsm)
         
-        ### 📋 Expected Data Format:
-        Your Excel file should contain options chain data with columns like:
-        - `Strike` - Strike prices
-        - `CE_OI`, `PE_OI` - Call/Put Open Interest  
-        - `CE_Total_Traded_Volume`, `PE_Total_Traded_Volume` - Volume
-        - `CE_LTP`, `PE_LTP` - Last Traded Price
-        - `CE_OI_Change`, `PE_OI_Change` - OI Changes
+        ### 🎯 Perfect for:
+        - Live options trading analysis
+        - Market sentiment tracking
+        - Risk management
+        - Strike selection
+        - Options flow monitoring
         """)
-        
-        # Sample data format
-        st.subheader("📊 Sample Data Format")
-        sample_data = pd.DataFrame({
-            'Strike': [22500, 22550, 22600, 22650, 22700],
-            'CE_OI': [1500, 2300, 3400, 2100, 1800],
-            'PE_OI': [1200, 1800, 2100, 2800, 3200],
-            'CE_Total_Traded_Volume': [450, 680, 920, 540, 380],
-            'PE_Total_Traded_Volume': [320, 490, 650, 780, 890],
-            'CE_LTP': [245.5, 195.3, 148.7, 105.2, 68.9],
-            'PE_LTP': [38.4, 58.9, 85.3, 120.7, 165.2]
-        })
-        
-        st.dataframe(sample_data, use_container_width=True)
 
 if __name__ == "__main__":
     main()
