@@ -640,28 +640,32 @@ def display_comprehensive_dashboard(data_dict):
     if pcr_data:
         st.header("PCR & Options Analysis")
         
-        pcr_cols = st.columns(len([k for k in pcr_data.keys() if k != 'oi_analysis']))
-        col_idx = 0
+        # Get PCR items excluding 'oi_analysis'
+        pcr_items = [k for k in pcr_data.keys() if k != 'oi_analysis']
         
-        for pcr_name, pcr_info in pcr_data.items():
-            if pcr_name == 'oi_analysis':
-                continue
-                
-            with pcr_cols[col_idx]:
+        if pcr_items:
+            pcr_cols = st.columns(len(pcr_items))
+            col_idx = 0
+            
+            for pcr_name in pcr_items:
+                pcr_info = pcr_data[pcr_name]
                 interpretation = pcr_info['interpretation']
                 signal = interpretation['signal']
                 
-                st.markdown(f"""
-                <div class="pcr-analysis">
-                    <h4>{pcr_name}</h4>
-                    <h2>{pcr_info['value']:.3f}</h2>
-                    <p><strong>{signal}</strong></p>
-                    <p>{interpretation['action']}</p>
-                    <small>Confidence: {interpretation['confidence']}</small>
-                </div>
-                """, unsafe_allow_html=True)
-            
-            col_idx += 1
+                with pcr_cols[col_idx]:
+                    st.markdown(f"""
+                    <div class="pcr-analysis">
+                        <h4>{pcr_name}</h4>
+                        <h2>{pcr_info['value']:.3f}</h2>
+                        <p><strong>{signal}</strong></p>
+                        <p>{interpretation['action']}</p>
+                        <small>Confidence: {interpretation['confidence']}</small>
+                    </div>
+                    """, unsafe_allow_html=True)
+                
+                col_idx += 1
+        else:
+            st.info("No PCR data available")
         
         # OI Analysis
         if 'oi_analysis' in pcr_data:
