@@ -4,7 +4,6 @@ import streamlit as st
 import warnings
 import time
 from datetime import datetime
-
 warnings.filterwarnings('ignore')
 
 # Set page config
@@ -77,8 +76,13 @@ def load_data_file(file):
             # Try multiple methods for Excel files
             data_dict = {}
             
-            # Method 1: Default pandas
+            # Method 1: Check if Excel libraries are available
             try:
+                # Try importing required libraries
+                import openpyxl
+                import xlrd
+                
+                # If we get here, libraries are available
                 excel_file = pd.ExcelFile(file)
                 st.info(f"📁 Found {len(excel_file.sheet_names)} sheets in Excel file")
                 
@@ -98,16 +102,35 @@ def load_data_file(file):
             except ImportError:
                 # If Excel libraries not available, show helpful message
                 st.error("""
-                📊 **Excel file detected, but Excel support not installed**
+                📊 **Excel file detected, but Excel support libraries not installed**
                 
                 **Quick Fix - Convert to CSV:**
                 1. Open your Excel file
-                2. Select the sheet you want (e.g., OC_1)
+                2. Select the sheet you want (e.g., OC_1, OC_2, OC_3)
                 3. File → Save As → CSV format
                 4. Upload the CSV file instead
                 
+                **Why CSV is better:**
+                - ✅ No extra packages needed
+                - ✅ Faster loading
+                - ✅ Works on all systems
+                - ✅ Smaller file size
+                
                 **CSV files work without any extra packages!**
                 """)
+                
+                # Show a sample of how to convert
+                st.markdown("""
+                <div class="info-box">
+                <strong>📋 How to convert Excel to CSV:</strong><br>
+                1. Open your Excel file<br>
+                2. Go to File → Save As<br>
+                3. Choose "CSV (Comma delimited)" as the file type<br>
+                4. Save with a new name<br>
+                5. Upload the CSV file here
+                </div>
+                """, unsafe_allow_html=True)
+                
                 return {}
             
             except Exception as e:
