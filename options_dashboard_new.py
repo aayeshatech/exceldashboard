@@ -1,13 +1,13 @@
 import pandas as pd
 import streamlit as st
 from datetime import datetime
+from streamlit_autorefresh import st_autorefresh
 
 st.set_page_config(page_title="Live Option Chain Dashboard", page_icon="📊", layout="wide")
 
-# === Auto Refresh ===
-auto_refresh = st.sidebar.checkbox("🔄 Auto Refresh (30 sec)", value=True)
-if auto_refresh:
-    st_autorefresh = st.experimental_rerun()
+# === Auto Refresh (every 30 sec) ===
+if st.sidebar.checkbox("🔄 Auto Refresh (30 sec)", value=True):
+    st_autorefresh(interval=30000, key="refresh")
 
 # === File Path ===
 file_path = "Live_Option_Chain_Terminal.xlsm"
@@ -16,7 +16,7 @@ file_path = "Live_Option_Chain_Terminal.xlsm"
 def load_excel_data():
     xls = pd.ExcelFile(file_path, engine="openpyxl")
     sheet_targets = [
-        "OC_1","OC_2","OC_3",
+        "OC_1","OC_2",
         "Dashboard","Screener","Sector Dashboard",
         "PCR & OI Chart","FII DII Data","Fiis&Diis Dashboard"
     ]
@@ -39,8 +39,8 @@ if "PCR & OI Chart" in data_dict:
     df_pcr = data_dict["PCR & OI Chart"]
     st.header("📊 Market Sentiment")
     try:
-        pcr_oi = df_pcr.iloc[0,2]
-        pcr_vol = df_pcr.iloc[0,3]
+        pcr_oi = float(df_pcr.iloc[0,2])
+        pcr_vol = float(df_pcr.iloc[0,3])
 
         col1, col2 = st.columns(2)
         col1.metric("⚖️ PCR (OI)", f"{pcr_oi:.2f}")
@@ -52,43 +52,55 @@ if "PCR & OI Chart" in data_dict:
             st.success("🐂 Bullish Sentiment (Low PCR)")
         else:
             st.warning("⚖️ Neutral Sentiment")
-    except:
-        st.warning("⚠️ PCR format mismatch")
+    except Exception as e:
+        st.warning(f"⚠️ PCR format issue: {e}")
 
-# === Support & Resistance Function ===
-def support_resistance(df):
+# === Support / Resistance & Max Pain ===
+def support_resistance_maxpain(df):
     try:
-        if "Strike" in df.columns and "CE_OI" in df.columns and "PE_OI" in df.columns:
+        if {"Strike","CE_OI","PE_OI"}.issubset(df.columns):
             ce_oi_idx = df["CE_OI"].idxmax()
             pe_oi_idx = df["PE_OI"].idxmax()
             support = df.loc[pe_oi_idx, "Strike"]
             resistance = df.loc[ce_oi_idx, "Strike"]
-            return support, resistance
-    except:
-        return None, None
-    return None, None
 
-# === Nifty & BankNifty Summary ===
+            # Max Pain
+            strikes = df["Strike"].dropna().unique()
+            total_pain = {}
+            for strike in strikes:
+                call_pain = (df.loc[df["Strike"] < strike, "CE_OI"] * (strike - df.loc[df["Strike"] < strike, "Strike"])).sum()
+                put_pain  = (df.loc[df["Strike"] > strike, "PE_OI"] * (df.loc[df["Strike"] > strike, "Strike"] - strike)).sum()
+                total_pain[strike] = call_pain + put_pain
+            max_pain = min(total_pain, key=total_pain.get) if total_pain else None
+
+            return support, resistance, max_pain
+    except:
+        return None, None, None
+    return None, None, None
+
+# === Index Summary ===
 st.header("📌 Index Summary")
 
 col1, col2 = st.columns(2)
 
 if "OC_1" in data_dict:
-    support, resistance = support_resistance(data_dict["OC_1"])
+    support, resistance, maxpain = support_resistance_maxpain(data_dict["OC_1"])
     with col1:
         st.subheader("Nifty Options")
         if support and resistance:
-            st.success(f"Support: {support}")
-            st.error(f"Resistance: {resistance}")
+            st.success(f"🟢 Support: {support}")
+            st.error(f"🔴 Resistance: {resistance}")
+            st.info(f"💰 Max Pain: {maxpain}")
         st.dataframe(data_dict["OC_1"].head(15))
 
 if "OC_2" in data_dict:
-    support, resistance = support_resistance(data_dict["OC_2"])
+    support, resistance, maxpain = support_resistance_maxpain(data_dict["OC_2"])
     with col2:
         st.subheader("BankNifty Options")
         if support and resistance:
-            st.success(f"Support: {support}")
-            st.error(f"Resistance: {resistance}")
+            st.success(f"🟢 Support: {support}")
+            st.error(f"🔴 Resistance: {resistance}")
+            st.info(f"💰 Max Pain: {maxpain}")
         st.dataframe(data_dict["OC_2"].head(15))
 
 # === Dashboard Movers ===
