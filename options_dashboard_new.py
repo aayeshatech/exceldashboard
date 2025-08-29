@@ -5,6 +5,8 @@ import warnings
 import time
 import subprocess
 import sys
+import zipfile
+import xml.etree.ElementTree as ET
 from datetime import datetime
 warnings.filterwarnings('ignore')
 
@@ -84,6 +86,87 @@ def install_excel_libraries():
         st.error("❌ Failed to install Excel libraries automatically.")
         return False
 
+def read_excel_without_libraries(file):
+    """Read Excel file without external libraries using zipfile and XML parsing"""
+    try:
+        # Excel files are zip archives containing XML files
+        with zipfile.ZipFile(file) as z:
+            # Get the workbook relationships to find sheet names
+            with z.open('xl/_rels/.rels') as f:
+                rels = f.read()
+            
+            # Parse the XML to find sheet relationships
+            root = ET.fromstring(rels)
+            sheets = []
+            for child in root:
+                if child.attrib.get('Type') == 'http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument':
+                    target = child.attrib.get('Target')
+                    if target:
+                        # Now get the workbook.xml to find sheet names
+                        with z.open(f"xl/{target}") as f:
+                            workbook = f.read()
+                        workbook_root = ET.fromstring(workbook)
+                        
+                        # Find sheet names
+                        for sheet in workbook_root.findall('.//{http://schemas.openxmlformats.org/spreadsheetml/2006/main}sheet'):
+                            sheet_name = sheet.attrib.get('name')
+                            sheet_id = sheet.attrib.get('sheetId')
+                            r_id = sheet.attrib.get('{http://schemas.openxmlformats.org/officeDocument/2006/relationships}id')
+                            sheets.append({
+                                'name': sheet_name,
+                                'id': sheet_id,
+                                'r_id': r_id
+                            })
+                        
+                        # Now get the workbook relationships to find sheet files
+                        with z.open(f"xl/_rels/{target.split('/')[-1]}.rels") as f:
+                            workbook_rels = f.read()
+                        workbook_rels_root = ET.fromstring(workbook_rels)
+                        
+                        # Map relationship IDs to file names
+                        sheet_files = {}
+                        for rel in workbook_rels_root:
+                            if rel.attrib.get('Type') == 'http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet':
+                                r_id = rel.attrib.get('Id')
+                                target = rel.attrib.get('Target')
+                                sheet_files[r_id] = target
+                        
+                        # Now read each sheet
+                        data_dict = {}
+                        for sheet in sheets:
+                            r_id = sheet.get('r_id')
+                            if r_id in sheet_files:
+                                sheet_file = sheet_files[r_id]
+                                with z.open(f"xl/{sheet_file}") as f:
+                                    sheet_data = f.read()
+                                
+                                # Parse the sheet XML
+                                sheet_root = ET.fromstring(sheet_data)
+                                
+                                # Extract data
+                                rows = []
+                                for row in sheet_root.findall('.//{http://schemas.openxmlformats.org/spreadsheetml/2006/main}row'):
+                                    row_data = []
+                                    for cell in row.findall('.//{http://schemas.openxmlformats.org/spreadsheetml/2006/main}c'):
+                                        value = cell.find('.//{http://schemas.openxmlformats.org/spreadsheetml/2006/main}v')
+                                        if value is not None:
+                                            row_data.append(value.text)
+                                        else:
+                                            row_data.append("")
+                                    rows.append(row_data)
+                                
+                                # Convert to DataFrame
+                                if rows:
+                                    df = pd.DataFrame(rows[1:], columns=rows[0] if rows[0] else None)
+                                    data_dict[sheet['name']] = df
+                        
+                        return data_dict
+        
+        return None
+    except Exception as e:
+        st.error(f"Error reading Excel without libraries: {str(e)}")
+        return None
+
 @st.cache_data(ttl=30)
 def load_data_file(file):
     """Load data file - supports Excel and CSV with fallback methods"""
@@ -98,7 +181,7 @@ def load_data_file(file):
                 return {'CSV_Data': df}
         
         elif file_extension in ['xlsx', 'xlsm']:
-            # Try to read Excel file directly without checking for libraries first
+            # Try to read Excel file using pandas first
             try:
                 excel_file = pd.ExcelFile(file)
                 st.info(f"📁 Found {len(excel_file.sheet_names)} sheets in Excel file")
@@ -120,16 +203,32 @@ def load_data_file(file):
                 if data_dict:
                     return data_dict
                 else:
-                    st.error("❌ No sheets could be loaded from the Excel file")
-                    return {'excel_libraries_missing': True}
+                    st.error("❌ No sheets could be loaded from the Excel file using pandas")
+                    # Try alternative method
+                    st.info("Trying alternative method to read Excel file...")
+                    data_dict = read_excel_without_libraries(file)
+                    if data_dict:
+                        return data_dict
+                    else:
+                        return {'excel_libraries_missing': True}
                 
             except ImportError:
-                # If Excel libraries not available, return a special indicator
-                return {'excel_libraries_missing': True}
+                # If Excel libraries not available, try alternative method
+                st.info("Excel libraries not found, trying alternative method...")
+                data_dict = read_excel_without_libraries(file)
+                if data_dict:
+                    return data_dict
+                else:
+                    return {'excel_libraries_missing': True}
             except Exception as e:
-                # If reading Excel fails for any other reason
-                st.error(f"❌ Error reading Excel file: {str(e)}")
-                return {'excel_libraries_missing': True}
+                # If reading Excel fails for any other reason, try alternative method
+                st.error(f"Error reading Excel file with pandas: {str(e)}")
+                st.info("Trying alternative method to read Excel file...")
+                data_dict = read_excel_without_libraries(file)
+                if data_dict:
+                    return data_dict
+                else:
+                    return {'excel_libraries_missing': True}
         
         else:
             st.error(f"❌ Unsupported file format: {file_extension}")
@@ -423,7 +522,7 @@ def main():
         # Check if Excel libraries are missing
         if 'excel_libraries_missing' in data_dict:
             st.error("""
-            📊 **Excel file detected, but Excel support libraries not installed**
+            📊 **Excel file detected, but could not be read**
             """)
             
             # Initialize session state for installation attempt
