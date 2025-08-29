@@ -668,24 +668,28 @@ def display_comprehensive_dashboard(data_dict):
             st.info("No PCR data available")
         
         # OI Analysis
-        if 'oi_analysis' in pcr_data:
+        if 'oi_analysis' in pcr_data and pcr_data['oi_analysis']:
             st.subheader("Open Interest Analysis")
             oi_analysis = pcr_data['oi_analysis']
             
-            oi_cols = st.columns(min(4, len(oi_analysis)))
-            for i, (oi_name, oi_info) in enumerate(list(oi_analysis.items())[:4]):
-                with oi_cols[i]:
-                    change_pct = oi_info['change_pct']
-                    if abs(change_pct) > 5:
-                        alert_class = "unwinding-alert" if change_pct < 0 else "buildup-alert"
-                        st.markdown(f"""
-                        <div class="{alert_class}">
-                            <strong>{oi_name}</strong><br>
-                            Current: {oi_info['current']:,.0f}<br>
-                            Change: {oi_info['change']:+,.0f}<br>
-                            Change %: {change_pct:+.2f}%
-                        </div>
-                        """, unsafe_allow_html=True)
+            # Check if there's any OI data to display
+            if oi_analysis:
+                oi_cols = st.columns(min(4, len(oi_analysis)))
+                for i, (oi_name, oi_info) in enumerate(list(oi_analysis.items())[:4]):
+                    with oi_cols[i]:
+                        change_pct = oi_info['change_pct']
+                        if abs(change_pct) > 5:
+                            alert_class = "unwinding-alert" if change_pct < 0 else "buildup-alert"
+                            st.markdown(f"""
+                            <div class="{alert_class}">
+                                <strong>{oi_name}</strong><br>
+                                Current: {oi_info['current']:,.0f}<br>
+                                Change: {oi_info['change']:+,.0f}<br>
+                                Change %: {change_pct:+.2f}%
+                            </div>
+                            """, unsafe_allow_html=True)
+            else:
+                st.info("No OI analysis data available")
     
     # Options Unwinding Analysis
     if any(unwinding_data.values()):
