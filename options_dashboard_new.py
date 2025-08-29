@@ -1,13 +1,24 @@
 import pandas as pd
 import streamlit as st
 from datetime import datetime
-from streamlit_autorefresh import st_autorefresh
+
+# Try to import streamlit-autorefresh safely
+try:
+    from streamlit_autorefresh import st_autorefresh
+    AUTOREFRESH_AVAILABLE = True
+except ImportError:
+    AUTOREFRESH_AVAILABLE = False
 
 st.set_page_config(page_title="Live Option Chain Dashboard", page_icon="📊", layout="wide")
 
-# === Auto Refresh (every 30 sec) ===
+# === Auto Refresh ===
 if st.sidebar.checkbox("🔄 Auto Refresh (30 sec)", value=True):
-    st_autorefresh(interval=30000, key="refresh")
+    if AUTOREFRESH_AVAILABLE:
+        st_autorefresh(interval=30000, key="refresh")
+    else:
+        st.warning("⚠️ `streamlit-autorefresh` not installed. Run:\n\n`pip install streamlit-autorefresh`\n\nUsing fallback manual refresh.")
+        if st.button("🔄 Refresh Now"):
+            st.experimental_rerun()
 
 # === File Path ===
 file_path = "Live_Option_Chain_Terminal.xlsm"
@@ -34,7 +45,7 @@ data_dict = load_excel_data()
 st.title("⚡ Live Options Summary Dashboard")
 st.caption(f"Last Updated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
 
-# === Market Sentiment (PCR & OI Chart) ===
+# === Market Sentiment (PCR) ===
 if "PCR & OI Chart" in data_dict:
     df_pcr = data_dict["PCR & OI Chart"]
     st.header("📊 Market Sentiment")
@@ -55,7 +66,7 @@ if "PCR & OI Chart" in data_dict:
     except Exception as e:
         st.warning(f"⚠️ PCR format issue: {e}")
 
-# === Support / Resistance & Max Pain ===
+# === Support / Resistance / Max Pain ===
 def support_resistance_maxpain(df):
     try:
         if {"Strike","CE_OI","PE_OI"}.issubset(df.columns):
@@ -64,7 +75,6 @@ def support_resistance_maxpain(df):
             support = df.loc[pe_oi_idx, "Strike"]
             resistance = df.loc[ce_oi_idx, "Strike"]
 
-            # Max Pain
             strikes = df["Strike"].dropna().unique()
             total_pain = {}
             for strike in strikes:
@@ -80,7 +90,6 @@ def support_resistance_maxpain(df):
 
 # === Index Summary ===
 st.header("📌 Index Summary")
-
 col1, col2 = st.columns(2)
 
 if "OC_1" in data_dict:
