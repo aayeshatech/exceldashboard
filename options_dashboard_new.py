@@ -81,7 +81,20 @@ def install_excel_libraries():
         st.success("✅ Excel libraries installed successfully!")
         return True
     except Exception as e:
-        st.error(f"❌ Failed to install Excel libraries: {str(e)}")
+        st.error(f"""
+        ❌ **Failed to install Excel libraries automatically**
+        
+        This is likely due to environment restrictions. You can try:
+        
+        **Option 1: Manual Installation**
+        Run this command in your terminal:
+        <div class="code-box">
+        pip install openpyxl xlrd
+        </div>
+        
+        **Option 2: Convert to CSV (Recommended)**
+        Since Excel support requires additional packages, we recommend converting your Excel file to CSV format.
+        """)
         return False
 
 @st.cache_data(ttl=30)
@@ -448,7 +461,7 @@ def main():
             """)
             
             st.markdown("""
-            **Option 1: Install Excel Libraries (Recommended)**
+            **Option 1: Manual Installation (Advanced Users)**
             """)
             
             st.markdown("""
@@ -457,13 +470,16 @@ def main():
             </div>
             """, unsafe_allow_html=True)
             
-            # Add install button
-            if st.button("🛠️ Install Excel Libraries"):
-                if install_excel_libraries():
-                    st.rerun()
+            st.markdown("""
+            Run this command in your terminal or command prompt, then restart the app.
+            """)
+            
+            # Add install button with disclaimer
+            if st.button("🛠️ Try Automatic Install"):
+                install_excel_libraries()
             
             st.markdown("""
-            **Option 2: Convert to CSV (Quick Fix)**
+            **Option 2: Convert to CSV (Recommended for All Users)**
             1. Open your Excel file
             2. Select the sheet you want (e.g., OC_1, OC_2, OC_3)
             3. File → Save As → CSV format
@@ -474,6 +490,7 @@ def main():
             - ✅ Faster loading
             - ✅ Works on all systems
             - ✅ Smaller file size
+            - ✅ No compatibility issues
             
             **CSV files work without any extra packages!**
             """)
