@@ -79,6 +79,12 @@ st.markdown("""
     max-height: 500px;
     overflow-y: auto;
 }
+.filter-container {
+    background-color: #f8f9fa;
+    padding: 1rem;
+    border-radius: 8px;
+    margin-bottom: 1rem;
+}
 </style>
 """, unsafe_allow_html=True)
 
@@ -336,6 +342,111 @@ def display_stock_cards(stocks, title, card_class):
                 </div>
                 """, unsafe_allow_html=True)
 
+def display_sheet_data(data_dict, selected_sheet):
+    """Display the selected sheet data with filtering options"""
+    if not selected_sheet or selected_sheet not in data_dict:
+        return
+    
+    df = data_dict[selected_sheet]
+    
+    st.header(f"📄 Sheet: {selected_sheet}")
+    
+    # Display sheet info
+    st.write(f"**Rows:** {len(df)}, **Columns:** {len(df.columns)}")
+    
+    # Display column names
+    with st.expander("View Column Names"):
+        st.write(list(df.columns))
+    
+    # Create a copy of the dataframe for filtering
+    filtered_df = df.copy()
+    
+    # Add filtering options
+    st.subheader("Filter Options")
+    
+    # Create two columns for filter options
+    col1, col2 = st.columns(2)
+    
+    with col1:
+        st.write("**Filter Column 23 (LongBuildup)**")
+        # Check if column 23 exists
+        if len(df.columns) > 23:
+            col23_name = df.columns[23]
+            st.write(f"Column 23: {col23_name}")
+            
+            # Get unique values in column 23
+            unique_values = df.iloc[:, 23].dropna().unique()
+            selected_value = st.selectbox("Select value to filter", options=["All"] + list(unique_values))
+            
+            # Apply filter if not "All"
+            if selected_value != "All":
+                filtered_df = filtered_df[filtered_df.iloc[:, 23] == selected_value]
+                st.write(f"Filtered to {len(filtered_df)} rows where {col23_name} = {selected_value}")
+        else:
+            st.warning("Column 23 does not exist in this sheet")
+    
+    with col2:
+        st.write("**Filter Column 25 (Bullish)**")
+        # Check if column 25 exists
+        if len(df.columns) > 25:
+            col25_name = df.columns[25]
+            st.write(f"Column 25: {col25_name}")
+            
+            # Get unique values in column 25
+            unique_values = df.iloc[:, 25].dropna().unique()
+            selected_value = st.selectbox("Select value to filter", options=["All"] + list(unique_values))
+            
+            # Apply filter if not "All"
+            if selected_value != "All":
+                filtered_df = filtered_df[filtered_df.iloc[:, 25] == selected_value]
+                st.write(f"Filtered to {len(filtered_df)} rows where {col25_name} = {selected_value}")
+        else:
+            st.warning("Column 25 does not exist in this sheet")
+    
+    # Column selection options
+    st.subheader("Select Columns to Display")
+    
+    # Default columns to display (14, 16, 18, 19)
+    default_cols = []
+    if len(df.columns) > 19:
+        default_cols = [14, 16, 18, 19]
+    
+    # Create column options with index and name
+    col_options = []
+    for i, col_name in enumerate(df.columns):
+        col_options.append(f"{i}: {col_name}")
+    
+    # Let user select columns
+    selected_cols = st.multiselect(
+        "Select columns to display",
+        options=col_options,
+        default=[col_options[i] for i in default_cols if i < len(col_options)]
+    )
+    
+    # Extract column indices from selected options
+    col_indices = []
+    for col_opt in selected_cols:
+        try:
+            idx = int(col_opt.split(":")[0])
+            col_indices.append(idx)
+        except:
+            pass
+    
+    # Apply column selection
+    if col_indices:
+        display_df = filtered_df.iloc[:, col_indices]
+    else:
+        display_df = filtered_df
+    
+    # Display the filtered and selected columns
+    st.subheader("Filtered Data")
+    st.write(f"Showing {len(display_df)} rows and {len(display_df.columns)} columns")
+    
+    # Display dataframe with scrollable container
+    st.markdown('<div class="dataframe-container">', unsafe_allow_html=True)
+    st.dataframe(display_df)
+    st.markdown('</div>', unsafe_allow_html=True)
+
 def display_dashboard(data_dict, selected_sheet=None):
     """Display the main dashboard"""
     
@@ -348,22 +459,9 @@ def display_dashboard(data_dict, selected_sheet=None):
     </div>
     """, unsafe_allow_html=True)
     
-    # If a specific sheet is selected, display it
+    # If a specific sheet is selected, display it with filtering options
     if selected_sheet and selected_sheet in data_dict:
-        st.header(f"📄 Sheet: {selected_sheet}")
-        df = data_dict[selected_sheet]
-        
-        # Display sheet info
-        st.write(f"**Rows:** {len(df)}, **Columns:** {len(df.columns)}")
-        
-        # Display column names
-        with st.expander("View Column Names"):
-            st.write(list(df.columns))
-        
-        # Display dataframe with scrollable container
-        st.markdown('<div class="dataframe-container">', unsafe_allow_html=True)
-        st.dataframe(df)
-        st.markdown('</div>', unsafe_allow_html=True)
+        display_sheet_data(data_dict, selected_sheet)
         
         # Add a separator
         st.markdown("---")
