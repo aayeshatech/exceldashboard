@@ -439,8 +439,9 @@ def main():
     # Auto-refresh option
     auto_refresh = st.sidebar.checkbox("Auto Refresh (30s)", value=False)
     
+    # Use st.rerun() instead of st.experimental_rerun()
     if st.sidebar.button("🔄 Refresh"):
-        st.experimental_rerun()
+        st.rerun()
     
     # Display time
     st.sidebar.markdown(f"**Time:** {datetime.now().strftime('%H:%M:%S')}")
