@@ -121,6 +121,68 @@ def read_excel_data(file_path):
         st.sidebar.error(f"Error reading file: {str(e)}")
         return {}
 
+def extract_sector_data(data_dict):
+    """Extract sector performance data specifically from columns X and Z"""
+    sectors = {}
+    
+    for sheet_name, df in data_dict.items():
+        # Look for sector dashboard sheet
+        if 'SECTOR' in sheet_name.upper() or 'DASHBOARD' in sheet_name.upper():
+            
+            # Get column names (X and Z columns)
+            col_names = list(df.columns)
+            
+            # Find X and Z columns (columns 23 and 25 if 0-indexed)
+            x_col_idx = None
+            z_col_idx = None
+            
+            for i, col_name in enumerate(col_names):
+                if 'X' in str(col_name).upper() or i == 23:  # Column X (index 23)
+                    x_col_idx = i
+                elif 'Z' in str(col_name).upper() or i == 25:  # Column Z (index 25)
+                    z_col_idx = i
+            
+            if x_col_idx is not None and z_col_idx is not None:
+                st.sidebar.info(f"Found sector data in {sheet_name}: X-col={x_col_idx}, Z-col={z_col_idx}")
+                
+                # Extract sector data from these columns
+                for index, row in df.iterrows():
+                    try:
+                        # Get sector name from X column
+                        sector_name = str(row.iloc[x_col_idx]).strip()
+                        
+                        # Skip empty rows or non-sector rows
+                        if (not sector_name or sector_name == 'nan' or 
+                            not any(keyword in sector_name.upper() for keyword in 
+                                   ['NIFTY', 'BANK', 'FIN', 'IT', 'AUTO', 'PHARMA', 'METAL', 'OIL', 'FMCG'])):
+                            continue
+                        
+                        # Get bullish percentage from Z column
+                        bullish_val = None
+                        z_value = row.iloc[z_col_idx]
+                        
+                        if pd.notna(z_value):
+                            try:
+                                # Handle percentage values (e.g., "0.4%")
+                                if isinstance(z_value, str) and '%' in z_value:
+                                    bullish_val = float(z_value.replace('%', '').strip())
+                                else:
+                                    bullish_val = float(z_value)
+                            except:
+                                pass
+                        
+                        if bullish_val is not None and 0 <= bullish_val <= 100:
+                            sectors[sector_name] = {
+                                'bullish': bullish_val, 
+                                'bearish': 100 - bullish_val
+                            }
+                            st.sidebar.success(f"Added sector: {sector_name} - Bullish: {bullish_val}%")
+                            
+                    except Exception as e:
+                        continue
+    
+    return sectors
+
 def extract_stock_data(data_dict):
     """Extract and categorize stock data - Fixed to match your exact Excel format"""
     categories = {
@@ -220,53 +282,6 @@ def extract_stock_data(data_dict):
     
     return categories
 
-def extract_sector_data(data_dict):
-    """Extract sector performance data from your specific format"""
-    sectors = {}
-    
-    for sheet_name, df in data_dict.items():
-        if 'SECTOR' in sheet_name.upper() or 'Dashboard' in sheet_name:
-            for _, row in df.iterrows():
-                try:
-                    # Look for rows with sector names
-                    first_val = str(row.iloc[0]) if len(row) > 0 else ""
-                    
-                    if any(keyword in first_val.upper() for keyword in ['NIFTY', 'BANK', 'IT', 'AUTO', 'PHARMA', 'FIN']):
-                        # Look for percentage values in the row
-                        bullish_val = None
-                        bearish_val = None
-                        
-                        for i, val in enumerate(row):
-                            try:
-                                # Check if value is a percentage string like "0.0%"
-                                if isinstance(val, str) and '%' in val:
-                                    num_val = float(val.replace('%', '').strip())
-                                    if 0 <= num_val <= 100:
-                                        if bullish_val is None:
-                                            bullish_val = num_val
-                                        else:
-                                            bearish_val = num_val
-                                            break
-                                # Check if value is a numeric percentage
-                                elif isinstance(val, (int, float)) and 0 <= val <= 100:
-                                    if bullish_val is None:
-                                        bullish_val = val
-                                    else:
-                                        bearish_val = val
-                                        break
-                            except:
-                                continue
-                        
-                        if bullish_val is not None:
-                            sectors[first_val] = {
-                                'bullish': bullish_val, 
-                                'bearish': bearish_val if bearish_val is not None else 100 - bullish_val
-                            }
-                except:
-                    continue
-    
-    return sectors
-
 def display_stock_cards(stocks, title, card_class):
     """Display stocks in card format"""
     if not stocks:
@@ -315,9 +330,9 @@ def display_dashboard(data_dict):
                 st.write("**Columns:**", list(df.columns))
                 st.dataframe(df.head(3))
     
-    # Extract data
-    stock_categories = extract_stock_data(data_dict)
+    # Extract data - Focus on sector data first
     sector_data = extract_sector_data(data_dict)
+    stock_categories = extract_stock_data(data_dict)
     
     # Display sector performance
     if sector_data:
@@ -334,6 +349,8 @@ def display_dashboard(data_dict):
                         <p>Bearish: {data['bearish']:.1f}%</p>
                     </div>
                     """, unsafe_allow_html=True)
+    else:
+        st.warning("No sector data found. Please check if your Excel has a 'Sector Dashboard' sheet with data in columns X and Z.")
     
     # Display summary metrics
     st.header("📈 Market Summary")
@@ -360,6 +377,7 @@ def display_dashboard(data_dict):
     # Debug: Show extraction results
     if debug_mode:
         st.subheader("🔍 Extraction Results")
+        st.write("**Sector Data:**", sector_data)
         for category, stocks in stock_categories.items():
             st.write(f"**{category}:** {len(stocks)} stocks")
             if stocks:
@@ -460,14 +478,9 @@ def main():
         # Sample data option
         if st.sidebar.checkbox("🎯 Load Sample Data"):
             sample_data = {
-                'Sample Sheet': pd.DataFrame({
-                    'STOCK NAME': ['NSE=RELIANCE', 'NSE=TCS', 'NSE=INFY', 'NSE=HDFC'],
-                    'CHANGE %': [2.45, 1.87, -1.25, 0.95],
-                    'PRICE': [2850, 3650, 1750, 1650],
-                    'OI': [145000, 125000, 180000, 95000],
-                    'Volume': [85000, 65000, 95000, 75000],
-                    'Building': ['LongBuilding', 'LongBuilding', 'Shortcover', 'Shortcover'],
-                    'SENTIMENT': ['Bullish', 'Bullish', 'Wait For Signal', 'Bullish']
+                'Sector Dashboard': pd.DataFrame({
+                    'Unnamed: 23': ['NSE:NIFTYNXT50', 'NSE:HDFCBANK', 'NSE:RBLBANK', 'NSE:YESBANK'],
+                    'Unnamed: 25': ['0.0%', '0.4%', '0.8%', '0.5%']
                 })
             }
             display_dashboard(sample_data)
