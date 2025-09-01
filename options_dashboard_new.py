@@ -149,6 +149,15 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
+def find_column_by_keywords(columns, keywords):
+    """Find a column that contains any of the given keywords"""
+    for col in columns:
+        col_upper = str(col).upper()
+        for keyword in keywords:
+            if keyword in col_upper:
+                return col
+    return None
+
 def create_sample_data():
     """Create sample F&O data for demonstration"""
     sample_stocks = [
@@ -641,46 +650,73 @@ def main():
     # Display current time
     st.sidebar.markdown(f"**Current Time:** {datetime.now().strftime('%H:%M:%S')}")
     
-    # Instructions for macro files
+    # Instructions updated for macro files
     if not data_dict:
         st.markdown("""
-        ## 🚫 Macro File Not Supported
+        ## 📊 F&O Dashboard - Now Supports Macro Files!
         
-        Your Excel file contains macros (.xlsm format) which cannot be uploaded directly. Here are your options:
+        ### ✅ **Supported File Formats:**
+        - **Excel Workbook (.xlsx)**
+        - **Excel 97-2003 (.xls)**
+        - **Excel Macro-Enabled (.xlsm)** - NEW!
         
-        ### 💡 **Solution 1: Convert to .xlsx**
-        1. Open your Excel file
-        2. Go to **File → Save As**
-        3. Choose **Excel Workbook (.xlsx)** format
-        4. Upload the converted file
+        ### 🔧 **How Macro Files Are Handled:**
         
-        ### 💡 **Solution 2: Export to CSV**
-        1. Open your Excel file
-        2. Select the data sheet
-        3. Go to **File → Save As**
-        4. Choose **CSV (Comma delimited)** format
-        5. Use the "📋 Paste CSV Data" option in sidebar
+        **What Works:**
+        - ✅ All data extraction from sheets
+        - ✅ Multiple sheet processing  
+        - ✅ Complex formulas (calculated values)
+        - ✅ Charts and tables data
         
-        ### 💡 **Solution 3: Try Sample Data**
-        - Check "🎯 Load Sample Data" in the sidebar to see the dashboard in action
+        **What's Ignored:**
+        - ⚠️ VBA Macros (security reason)
+        - ⚠️ ActiveX controls
+        - ⚠️ Custom functions
         
-        ### 📋 **Expected CSV Format:**
+        ### 💡 **Quick Start Options:**
+        
+        **Option 1: Upload Your .xlsm File**
+        - Simply upload your macro-enabled file
+        - The system will extract all data automatically
+        - Macros will be safely ignored
+        
+        **Option 2: Try Sample Data**  
+        - Click "🎯 Load Sample Data" to see the dashboard
+        
+        **Option 3: Manual CSV Input**
+        - Export your data to CSV
+        - Use "📋 Paste CSV Data" option
+        
+        ### 📋 **Expected Data Structure:**
         ```
-        Symbol,Change%,Price,OI,Volume,Buildup,Sentiment
-        RELIANCE,1.45,2500,150000,50000,longBuildup,Bullish
-        TCS,1.87,3650,125000,65000,longBuildup,Bullish
-        HDFC,1.25,1650,95000,75000,shortCover,Wait For Signal
+        Stock Name    | Change% | Price | OI      | Volume  | Buildup      | Sentiment
+        RELIANCE      | 1.45    | 2500  | 150000  | 85000   | longBuildup  | Bullish
+        TCS           | 1.87    | 3650  | 125000  | 65000   | longBuildup  | Bullish
+        HDFC          | 1.25    | 1650  | 95000   | 75000   | shortCover   | Bullish
         ```
         """)
     
     if uploaded_file is not None:
-        # Save uploaded file
-        with open("temp_fo_file.xlsx", "wb") as f:
+        # Determine file type and show processing info
+        file_extension = uploaded_file.name.split('.')[-1].lower()
+        
+        if file_extension == 'xlsm':
+            st.info("🔄 Processing macro-enabled file... Extracting data only.")
+        
+        # Save uploaded file with original extension
+        temp_filename = f"temp_fo_file.{file_extension}"
+        with open(temp_filename, "wb") as f:
             f.write(uploaded_file.getvalue())
         
         # Read and process data
-        with st.spinner("Loading F&O data..."):
-            data_dict = read_comprehensive_data("temp_fo_file.xlsx")
+        with st.spinner(f"Loading {file_extension.upper()} file..."):
+            data_dict = read_comprehensive_data(temp_filename)
+            
+        # Clean up temp file
+        try:
+            os.remove(temp_filename)
+        except:
+            pass
     
     if data_dict:
         # Display dashboard
