@@ -37,70 +37,42 @@ st.markdown("""
     background: linear-gradient(135deg, #dc3545, #fd7e14) !important;
 }
 
-.stock-table {
+.stock-card {
     background: white;
-    border-radius: 10px;
+    border-radius: 8px;
     padding: 1rem;
-    margin: 1rem 0;
-    box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+    margin: 0.5rem;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+    border-left: 5px solid;
 }
 
-.long-buildup {
-    background: linear-gradient(135deg, #28a745, #20c997);
-    color: white;
-    padding: 0.5rem;
-    border-radius: 5px;
-    margin: 0.2rem 0;
-    font-size: 0.9rem;
+.long-buildup-card {
+    border-left-color: #28a745;
+    background: linear-gradient(135deg, rgba(40, 167, 69, 0.1), rgba(255, 255, 255, 1));
 }
 
-.short-covering {
-    background: linear-gradient(135deg, #17a2b8, #6f42c1);
-    color: white;
-    padding: 0.5rem;
-    border-radius: 5px;
-    margin: 0.2rem 0;
-    font-size: 0.9rem;
+.short-covering-card {
+    border-left-color: #17a2b8;
+    background: linear-gradient(135deg, rgba(23, 162, 184, 0.1), rgba(255, 255, 255, 1));
 }
 
-.short-buildup {
-    background: linear-gradient(135deg, #dc3545, #fd7e14);
-    color: white;
-    padding: 0.5rem;
-    border-radius: 5px;
-    margin: 0.2rem 0;
-    font-size: 0.9rem;
+.short-buildup-card {
+    border-left-color: #dc3545;
+    background: linear-gradient(135deg, rgba(220, 53, 69, 0.1), rgba(255, 255, 255, 1));
 }
 
-.long-unwinding {
-    background: linear-gradient(135deg, #ffc107, #fd7e14);
-    color: white;
-    padding: 0.5rem;
-    border-radius: 5px;
-    margin: 0.2rem 0;
-    font-size: 0.9rem;
+.long-unwinding-card {
+    border-left-color: #ffc107;
+    background: linear-gradient(135deg, rgba(255, 193, 7, 0.1), rgba(255, 255, 255, 1));
 }
 
-.bullish-stock {
-    background: linear-gradient(135deg, #28a745, #20c997);
+.metric-card {
+    background: linear-gradient(135deg, #667eea, #764ba2);
     color: white;
-    padding: 0.8rem;
-    border-radius: 8px;
-    margin: 0.3rem 0;
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-}
-
-.bearish-stock {
-    background: linear-gradient(135deg, #dc3545, #fd7e14);
-    color: white;
-    padding: 0.8rem;
-    border-radius: 8px;
-    margin: 0.3rem 0;
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
+    padding: 1.5rem;
+    border-radius: 10px;
+    text-align: center;
+    margin: 0.5rem;
 }
 
 .live-indicator {
@@ -114,769 +86,343 @@ st.markdown("""
     50% { opacity: 0.5; }
     100% { opacity: 1; }
 }
-
-.data-table {
-    background: white;
-    border-radius: 8px;
-    overflow: hidden;
-    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
-}
-
-.metric-card {
-    background: linear-gradient(135deg, #667eea, #764ba2);
-    color: white;
-    padding: 1.5rem;
-    border-radius: 10px;
-    text-align: center;
-    margin: 0.5rem;
-}
-
-.wait-signal {
-    background: linear-gradient(135deg, #6c757d, #495057);
-    color: white;
-    padding: 0.3rem 0.6rem;
-    border-radius: 4px;
-    font-size: 0.8rem;
-}
-
-.bullish-signal {
-    background: linear-gradient(135deg, #28a745, #20c997);
-    color: white;
-    padding: 0.3rem 0.6rem;
-    border-radius: 4px;
-    font-size: 0.8rem;
-}
 </style>
 """, unsafe_allow_html=True)
 
-def find_column_by_keywords(columns, keywords):
-    """Find a column that contains any of the given keywords"""
-    for col in columns:
-        col_upper = str(col).upper()
-        for keyword in keywords:
-            if keyword in col_upper:
-                return col
-    return None
-
-def create_sample_data():
-    """Create sample F&O data for demonstration"""
-    sample_stocks = [
-        # Long Buildup stocks
-        {'symbol': 'RELIANCE', 'change': 2.45, 'price': 2850, 'oi': 145000, 'oi_change': 15.2, 'volume': 85000, 'buildup': 'longBuildup', 'sentiment': 'Bullish'},
-        {'symbol': 'TCS', 'change': 1.87, 'price': 3650, 'oi': 125000, 'oi_change': 12.8, 'volume': 65000, 'buildup': 'longBuildup', 'sentiment': 'Bullish'},
-        {'symbol': 'INFY', 'change': 1.65, 'price': 1750, 'oi': 180000, 'oi_change': 18.5, 'volume': 95000, 'buildup': 'longBuildup', 'sentiment': 'Bullish'},
-        
-        # Short Covering stocks
-        {'symbol': 'HDFC', 'change': 1.25, 'price': 1650, 'oi': 95000, 'oi_change': -8.5, 'volume': 75000, 'buildup': 'shortCover', 'sentiment': 'Bullish'},
-        {'symbol': 'ICICIBANK', 'change': 0.95, 'price': 1150, 'oi': 125000, 'oi_change': -12.3, 'volume': 85000, 'buildup': 'shortCover', 'sentiment': 'Wait For Signal'},
-        
-        # Short Buildup stocks
-        {'symbol': 'BAJFINANCE', 'change': -2.15, 'price': 6800, 'oi': 85000, 'oi_change': 22.5, 'volume': 45000, 'buildup': 'shortBuildup', 'sentiment': 'Wait For Signal'},
-        {'symbol': 'HDFCBANK', 'change': -1.85, 'price': 1580, 'oi': 195000, 'oi_change': 15.8, 'volume': 125000, 'buildup': 'shortBuildup', 'sentiment': 'Wait For Signal'},
-        
-        # Long Unwinding stocks
-        {'symbol': 'WIPRO', 'change': -1.45, 'price': 450, 'oi': 65000, 'oi_change': -18.5, 'volume': 55000, 'buildup': 'longUnwind', 'sentiment': 'Wait For Signal'},
-        {'symbol': 'TECHM', 'change': -0.85, 'price': 1250, 'oi': 75000, 'oi_change': -15.2, 'volume': 65000, 'buildup': 'longUnwind', 'sentiment': 'Wait For Signal'},
-        
-        # Additional stocks
-        {'symbol': 'ASIANPAINT', 'change': 1.97, 'price': 3200, 'oi': 55000, 'oi_change': 8.5, 'volume': 35000, 'buildup': 'longBuildup', 'sentiment': 'Bullish'},
-        {'symbol': 'MARUTI', 'change': 1.21, 'price': 11500, 'oi': 45000, 'oi_change': 5.2, 'volume': 25000, 'buildup': 'shortCover', 'sentiment': 'Bullish'},
-        {'symbol': 'LT', 'change': -1.15, 'price': 3450, 'oi': 85000, 'oi_change': 12.5, 'volume': 65000, 'buildup': 'shortBuildup', 'sentiment': 'Wait For Signal'},
-    ]
-    
-    # Convert to DataFrame format that matches expected structure
-    df = pd.DataFrame(sample_stocks)
-    
-    # Create a data_dict structure
-    data_dict = {
-        'Sample_Stock_Data': df,
-        'Dashboard': pd.DataFrame({
-            'Sector': ['NIFTY 50', 'NIFTY BANK', 'IT', 'PHARMA', 'AUTO', 'METAL'],
-            'BULLISH': [65.5, 45.2, 78.8, 55.5, 60.0, 35.5],
-            'BEARISH': [34.5, 54.8, 21.2, 44.5, 40.0, 64.5]
-        })
-    }
-    
-    return data_dict
-
-def convert_csv_to_data_dict(df):
-    """Convert CSV DataFrame to expected data_dict format"""
-    data_dict = {
-        'CSV_Stock_Data': df
-    }
-    return data_dict
-    """Find a column that contains any of the given keywords"""
-    for col in columns:
-        col_upper = str(col).upper()
-        for keyword in keywords:
-            if keyword in col_upper:
-                return col
-    return None
-
-@st.cache_data(ttl=30)  # Cache for 30 seconds for auto-refresh
-def read_comprehensive_data(file_path):
-    """Read all relevant sheets for F&O analysis - supports .xlsm files"""
+@st.cache_data(ttl=30)
+def read_excel_data(file_path):
+    """Read Excel file with macro support"""
     try:
-        # Try reading with openpyxl engine which supports .xlsm files
-        try:
-            excel_file = pd.ExcelFile(file_path, engine='openpyxl')
-        except:
-            # Fallback to default engine
-            excel_file = pd.ExcelFile(file_path)
-            
+        excel_file = pd.ExcelFile(file_path, engine='openpyxl')
         data_dict = {}
         
-        st.sidebar.info(f"📊 Processing {len(excel_file.sheet_names)} sheets...")
+        progress_bar = st.sidebar.progress(0)
+        status_text = st.sidebar.empty()
         
-        # Read all available sheets
         for i, sheet_name in enumerate(excel_file.sheet_names):
             try:
-                # Show progress
                 progress = (i + 1) / len(excel_file.sheet_names)
-                st.sidebar.progress(progress, text=f"Reading sheet: {sheet_name}")
+                progress_bar.progress(progress)
+                status_text.text(f"Reading sheet: {sheet_name}")
                 
-                # Read sheet with error handling for macro-enabled files
-                df = pd.read_excel(
-                    file_path, 
-                    sheet_name=sheet_name,
-                    engine='openpyxl'  # Explicitly use openpyxl for .xlsm support
-                )
-                
+                df = pd.read_excel(file_path, sheet_name=sheet_name, engine='openpyxl')
                 if not df.empty:
                     data_dict[sheet_name] = df
-                    st.sidebar.success(f"✅ {sheet_name}: {len(df)} rows")
-                else:
-                    st.sidebar.warning(f"⚠️ {sheet_name}: Empty sheet")
                     
             except Exception as e:
-                st.sidebar.error(f"❌ Error reading {sheet_name}: {str(e)}")
                 continue
         
-        st.sidebar.success(f"🎉 Successfully loaded {len(data_dict)} sheets")
+        progress_bar.empty()
+        status_text.empty()
+        st.sidebar.success(f"✅ Loaded {len(data_dict)} sheets successfully")
         return data_dict
         
     except Exception as e:
-        st.sidebar.error(f"❌ Error reading Excel file: {str(e)}")
-        
-        # Try alternative approach for problematic macro files
-        try:
-            st.sidebar.info("🔄 Trying alternative method for macro file...")
-            
-            # Use xlrd for older .xls files or specific .xlsm handling
-            if file_path.endswith('.xlsm'):
-                # For .xlsm files, try reading without macros
-                excel_file = pd.ExcelFile(file_path, engine='openpyxl')
-                data_dict = {}
-                
-                for sheet_name in excel_file.sheet_names:
-                    try:
-                        df = pd.read_excel(file_path, sheet_name=sheet_name, engine='openpyxl')
-                        if not df.empty:
-                            data_dict[sheet_name] = df
-                    except:
-                        continue
-                        
-                return data_dict
-            
-        except Exception as e2:
-            st.sidebar.error(f"❌ Alternative method failed: {str(e2)}")
-            
+        st.sidebar.error(f"Error reading file: {str(e)}")
         return {}
 
-def extract_sector_performance(data_dict):
-    """Extract sector-wise performance data - Fixed for your Excel format"""
-    sector_data = {}
-    
-    for sheet_name, df in data_dict.items():
-        # Look for sector or dashboard sheets
-        if 'SECTOR' in sheet_name.upper() or 'Dashboard' in sheet_name or 'ALL SECTOR' in sheet_name.upper():
-            try:
-                # Based on your Excel image, look for sector performance data
-                for _, row in df.iterrows():
-                    try:
-                        # Try to find sector names and their performance
-                        first_col = str(row.iloc[0]).strip() if pd.notna(row.iloc[0]) else ''
-                        
-                        # Check if this looks like a sector name
-                        sector_keywords = ['NIFTY', 'BANK', 'IT', 'PHARMA', 'METAL', 'AUTO', 'ENERGY', 'FMCG', 'SENSEX', 'MIDCAP', 'HEALTHCARE', 'REALTY', 'CONSUMER', 'SERVICE']
-                        
-                        if any(keyword in first_col.upper() for keyword in sector_keywords):
-                            # Look for bullish/bearish percentages in the row
-                            bullish_val = None
-                            bearish_val = None
-                            
-                            for col_val in row:
-                                try:
-                                    val_str = str(col_val).strip()
-                                    # Look for percentage values
-                                    if '%' in val_str:
-                                        val = float(val_str.replace('%', ''))
-                                        if 0 <= val <= 100:
-                                            if bullish_val is None:
-                                                bullish_val = val
-                                            elif bearish_val is None:
-                                                bearish_val = val
-                                                break
-                                except:
-                                    continue
-                            
-                            # If we found valid percentages, add to sector data
-                            if bullish_val is not None:
-                                if bearish_val is None:
-                                    bearish_val = 100 - bullish_val
-                                
-                                sector_data[first_col] = {
-                                    'bullish': bullish_val,
-                                    'bearish': bearish_val
-                                }
-                    except:
-                        continue
-                        
-            except:
-                continue
-    
-    return sector_data
-
-def extract_complete_stock_data(data_dict):
-    """Extract complete stock data with all buildup types - Fixed for your Excel format"""
-    stock_data = {
+def extract_stock_data(data_dict):
+    """Extract and categorize stock data"""
+    categories = {
         'long_buildup': [],
         'short_covering': [],
         'short_buildup': [],
         'long_unwinding': [],
         'bullish_stocks': [],
-        'bearish_stocks': [],
-        'all_stocks': []
+        'bearish_stocks': []
     }
     
     for sheet_name, df in data_dict.items():
-        # Look for sheets that contain stock data
-        if any(term in sheet_name.upper() for term in ['STOCK', 'NIFTY 50', 'DASHBOARD', 'BULLISH']):
-            try:
-                # Based on your Excel image, try to find columns
-                symbol_col = None
-                change_col = None
-                price_col = None
-                oi_col = None
-                oi_change_col = None
-                volume_col = None
-                buildup_col = None
-                sentiment_col = None
-                
-                # Find columns by exact or partial match
-                for col in df.columns:
-                    col_str = str(col).upper()
-                    
-                    if 'STOCK NAME' in col_str or col_str == 'STOCK' or 'SYMBOL' in col_str:
-                        symbol_col = col
-                    elif 'CHANGE %' in col_str or col_str == 'CHANGE%' or col_str == '%':
-                        change_col = col
-                    elif col_str == 'PRICE' or 'LTP' in col_str:
-                        price_col = col
-                    elif col_str == 'OI' and 'CHANGE' not in col_str:
-                        oi_col = col
-                    elif 'CHANGE IN OI' in col_str or 'OI CHANGE' in col_str:
-                        oi_change_col = col
-                    elif col_str == 'VOLUME' or 'VOL' in col_str:
-                        volume_col = col
-                    elif 'BUILDUP' in col_str or 'BUILD' in col_str:
-                        buildup_col = col
-                    elif 'SENTIMENT' in col_str or 'SIGNAL' in col_str:
-                        sentiment_col = col
-                
-                # If we found basic columns, process the data
-                if symbol_col and change_col:
-                    # Process each row
-                    for _, row in df.iterrows():
-                        try:
-                            symbol = str(row[symbol_col]).strip() if pd.notna(row[symbol_col]) else ''
-                            
-                            # Skip empty or invalid symbols
-                            if not symbol or symbol == 'nan' or symbol == '':
-                                continue
-                            
-                            # Clean symbol name - remove NSE: prefix if present
-                            if 'NSE:' in symbol:
-                                symbol = symbol.replace('NSE:', '')
-                            
-                            # Get change value
-                            change_val = row[change_col] if change_col else 0
-                            try:
-                                change = float(change_val) if pd.notna(change_val) else 0
-                            except (ValueError, TypeError):
-                                change = 0
-                            
-                            # Get other values
-                            price = float(row[price_col]) if price_col and pd.notna(row[price_col]) else 0
-                            oi = float(row[oi_col]) if oi_col and pd.notna(row[oi_col]) else 0
-                            oi_change = float(row[oi_change_col]) if oi_change_col and pd.notna(row[oi_change_col]) else 0
-                            volume = float(row[volume_col]) if volume_col and pd.notna(row[volume_col]) else 0
-                            buildup = str(row[buildup_col]).strip() if buildup_col and pd.notna(row[buildup_col]) else 'Unknown'
-                            sentiment = str(row[sentiment_col]).strip() if sentiment_col and pd.notna(row[sentiment_col]) else 'Wait For Signal'
-                            
-                            stock_info = {
-                                'symbol': symbol,
-                                'change': change,
-                                'price': price,
-                                'oi': oi,
-                                'oi_change': oi_change,
-                                'volume': volume,
-                                'buildup': buildup,
-                                'sentiment': sentiment
-                            }
-                            
-                            # Add to all stocks
-                            stock_data['all_stocks'].append(stock_info)
-                            
-                            # Categorize by buildup type (case insensitive)
-                            buildup_lower = buildup.lower()
-                            if 'longbuildup' in buildup_lower or 'long buildup' in buildup_lower:
-                                stock_data['long_buildup'].append(stock_info)
-                            elif 'shortcover' in buildup_lower or 'short cover' in buildup_lower:
-                                stock_data['short_covering'].append(stock_info)
-                            elif 'shortbuildup' in buildup_lower or 'short buildup' in buildup_lower:
-                                stock_data['short_buildup'].append(stock_info)
-                            elif 'longunwind' in buildup_lower or 'long unwind' in buildup_lower:
-                                stock_data['long_unwinding'].append(stock_info)
-                            
-                            # Categorize by performance
-                            if change > 0.5:
-                                stock_data['bullish_stocks'].append(stock_info)
-                            elif change < -0.5:
-                                stock_data['bearish_stocks'].append(stock_info)
-                        
-                        except Exception as e:
-                            # Skip problematic rows
+        # Look for stock data sheets
+        if any(term in sheet_name.upper() for term in ['STOCK', 'BULLISH', 'BEARISH', 'NIFTY']):
+            
+            # Find columns by checking actual column names
+            symbol_col = None
+            change_col = None
+            price_col = None
+            oi_col = None
+            volume_col = None
+            buildup_col = None
+            sentiment_col = None
+            
+            for col in df.columns:
+                col_upper = str(col).upper()
+                if 'STOCK' in col_upper and 'NAME' in col_upper:
+                    symbol_col = col
+                elif 'CHANGE' in col_upper and '%' in col_upper:
+                    change_col = col
+                elif col_upper == 'PRICE':
+                    price_col = col
+                elif col_upper == 'OI':
+                    oi_col = col
+                elif col_upper == 'VOLUME':
+                    volume_col = col
+                elif 'BUILDUP' in col_upper:
+                    buildup_col = col
+                elif 'SENTIMENT' in col_upper:
+                    sentiment_col = col
+            
+            # Process rows if we found key columns
+            if symbol_col and change_col:
+                for _, row in df.iterrows():
+                    try:
+                        symbol = str(row[symbol_col]) if pd.notna(row[symbol_col]) else ''
+                        if not symbol or symbol == 'nan':
                             continue
                             
-            except Exception as e:
-                # Skip problematic sheets
-                continue
+                        # Clean symbol name
+                        if 'NSE:' in symbol:
+                            symbol = symbol.replace('NSE:', '')
+                        
+                        # Get values
+                        change = float(row[change_col]) if pd.notna(row[change_col]) else 0
+                        price = float(row[price_col]) if price_col and pd.notna(row[price_col]) else 0
+                        oi = float(row[oi_col]) if oi_col and pd.notna(row[oi_col]) else 0
+                        volume = float(row[volume_col]) if volume_col and pd.notna(row[volume_col]) else 0
+                        buildup = str(row[buildup_col]) if buildup_col and pd.notna(row[buildup_col]) else ''
+                        sentiment = str(row[sentiment_col]) if sentiment_col and pd.notna(row[sentiment_col]) else ''
+                        
+                        stock_info = {
+                            'symbol': symbol,
+                            'change': change,
+                            'price': price,
+                            'oi': oi,
+                            'volume': volume,
+                            'buildup': buildup,
+                            'sentiment': sentiment
+                        }
+                        
+                        # Categorize by buildup
+                        buildup_lower = buildup.lower()
+                        if 'longbuildup' in buildup_lower:
+                            categories['long_buildup'].append(stock_info)
+                        elif 'shortcover' in buildup_lower:
+                            categories['short_covering'].append(stock_info)
+                        elif 'shortbuildup' in buildup_lower:
+                            categories['short_buildup'].append(stock_info)
+                        elif 'longunwind' in buildup_lower:
+                            categories['long_unwinding'].append(stock_info)
+                        
+                        # Categorize by performance
+                        if change > 0.5:
+                            categories['bullish_stocks'].append(stock_info)
+                        elif change < -0.5:
+                            categories['bearish_stocks'].append(stock_info)
+                            
+                    except:
+                        continue
     
-    # Sort all categories
-    for category in stock_data:
+    # Sort categories
+    for category in categories:
         if category == 'bearish_stocks':
-            stock_data[category] = sorted(stock_data[category], key=lambda x: x['change'])[:50]
+            categories[category] = sorted(categories[category], key=lambda x: x['change'])[:30]
         else:
-            stock_data[category] = sorted(stock_data[category], key=lambda x: x['change'], reverse=True)[:50]
+            categories[category] = sorted(categories[category], key=lambda x: x['change'], reverse=True)[:30]
     
-    return stock_data
+    return categories
 
-def display_sector_performance(sector_data):
-    """Display sector performance grid"""
-    if not sector_data:
-        return
+def extract_sector_data(data_dict):
+    """Extract sector performance data"""
+    sectors = {}
     
-    st.header("📊 All Sector Performance")
+    for sheet_name, df in data_dict.items():
+        if 'SECTOR' in sheet_name.upper() or 'Dashboard' in sheet_name:
+            for _, row in df.iterrows():
+                try:
+                    first_val = str(row.iloc[0])
+                    if any(keyword in first_val.upper() for keyword in ['NIFTY', 'BANK', 'IT', 'AUTO', 'PHARMA']):
+                        # Look for percentage values in the row
+                        for val in row:
+                            try:
+                                if isinstance(val, (int, float)) and 0 <= val <= 100:
+                                    sectors[first_val] = {'bullish': val, 'bearish': 100-val}
+                                    break
+                            except:
+                                continue
+                except:
+                    continue
     
-    # Create grid layout for sectors
-    cols = st.columns(4)
-    col_idx = 0
-    
-    for sector_name, data in sector_data.items():
-        with cols[col_idx % 4]:
-            sector_class = "bullish-sector" if data['bullish'] > 60 else "bearish-sector" if data['bullish'] < 40 else ""
-            
-            st.markdown(f"""
-            <div class="sector-performance {sector_class}">
-                <h4>{sector_name}</h4>
-                <div style="display: flex; justify-content: space-between;">
-                    <div>
-                        <strong>BULLISH</strong><br>
-                        <span style="font-size: 1.2em;">{data['bullish']:.1f}%</span>
-                    </div>
-                    <div>
-                        <strong>BEARISH</strong><br>
-                        <span style="font-size: 1.2em;">{data['bearish']:.1f}%</span>
-                    </div>
-                </div>
-            </div>
-            """, unsafe_allow_html=True)
-        
-        col_idx += 1
+    return sectors
 
-def display_stock_analysis_table(stock_data, category, title, css_class):
-    """Display stock data in a formatted table"""
-    if not stock_data[category]:
+def display_stock_cards(stocks, title, card_class):
+    """Display stocks in card format"""
+    if not stocks:
+        st.info(f"No {title.lower()} found")
         return
     
     st.subheader(title)
     
-    # Create DataFrame for better display
-    df_display = pd.DataFrame(stock_data[category])
-    
-    # Format the data for display
-    df_display['Change %'] = df_display['change'].apply(lambda x: f"{x:+.2f}%")
-    df_display['Price'] = df_display['price'].apply(lambda x: f"₹{x:.2f}" if x > 0 else "N/A")
-    df_display['OI'] = df_display['oi'].apply(lambda x: f"{x:,.0f}" if x > 0 else "N/A")
-    df_display['Volume'] = df_display['volume'].apply(lambda x: f"{x:,.0f}" if x > 0 else "N/A")
-    df_display['OI Change %'] = df_display['oi_change'].apply(lambda x: f"{x:+.2f}%" if not pd.isna(x) and x != 0 else "N/A")
-    
-    # Select columns for display
-    display_cols = ['symbol', 'Change %', 'Price', 'OI', 'OI Change %', 'Volume', 'buildup', 'sentiment']
-    df_show = df_display[display_cols]
-    df_show.columns = ['Stock', 'Change %', 'Price', 'OI', 'OI Change %', 'Volume', 'Buildup', 'Sentiment']
-    
-    # Display in chunks of 10
-    for i in range(0, min(30, len(df_show)), 10):
-        chunk = df_show.iloc[i:i+10]
-        
-        # Create HTML table for better formatting
-        table_html = f"""
-        <div class="data-table">
-            <table style="width: 100%; border-collapse: collapse;">
-                <thead style="background: #f8f9fa;">
-                    <tr>
-                        <th style="padding: 10px; text-align: left; border-bottom: 2px solid #dee2e6;">Stock</th>
-                        <th style="padding: 10px; text-align: center; border-bottom: 2px solid #dee2e6;">Change %</th>
-                        <th style="padding: 10px; text-align: center; border-bottom: 2px solid #dee2e6;">Price</th>
-                        <th style="padding: 10px; text-align: center; border-bottom: 2px solid #dee2e6;">OI</th>
-                        <th style="padding: 10px; text-align: center; border-bottom: 2px solid #dee2e6;">OI Change %</th>
-                        <th style="padding: 10px; text-align: center; border-bottom: 2px solid #dee2e6;">Volume</th>
-                        <th style="padding: 10px; text-align: center; border-bottom: 2px solid #dee2e6;">Buildup</th>
-                        <th style="padding: 10px; text-align: center; border-bottom: 2px solid #dee2e6;">Sentiment</th>
-                    </tr>
-                </thead>
-                <tbody>
-        """
-        
-        for _, row in chunk.iterrows():
-            # Determine row color based on change
-            row_style = ""
-            if category in ['long_buildup', 'bullish_stocks']:
-                row_style = "background-color: rgba(40, 167, 69, 0.1);"
-            elif category in ['short_covering']:
-                row_style = "background-color: rgba(23, 162, 184, 0.1);"
-            elif category in ['short_buildup', 'bearish_stocks']:
-                row_style = "background-color: rgba(220, 53, 69, 0.1);"
-            elif category in ['long_unwinding']:
-                row_style = "background-color: rgba(255, 193, 7, 0.1);"
-            
-            sentiment_class = "bullish-signal" if "Bullish" in str(row['Sentiment']) else "wait-signal"
-            
-            table_html += f"""
-                <tr style="{row_style}">
-                    <td style="padding: 8px; border-bottom: 1px solid #dee2e6;"><strong>{row['Stock']}</strong></td>
-                    <td style="padding: 8px; text-align: center; border-bottom: 1px solid #dee2e6;"><strong>{row['Change %']}</strong></td>
-                    <td style="padding: 8px; text-align: center; border-bottom: 1px solid #dee2e6;">{row['Price']}</td>
-                    <td style="padding: 8px; text-align: center; border-bottom: 1px solid #dee2e6;">{row['OI']}</td>
-                    <td style="padding: 8px; text-align: center; border-bottom: 1px solid #dee2e6;">{row['OI Change %']}</td>
-                    <td style="padding: 8px; text-align: center; border-bottom: 1px solid #dee2e6;">{row['Volume']}</td>
-                    <td style="padding: 8px; text-align: center; border-bottom: 1px solid #dee2e6;"><span class="{css_class}">{row['Buildup']}</span></td>
-                    <td style="padding: 8px; text-align: center; border-bottom: 1px solid #dee2e6;"><span class="{sentiment_class}">{row['Sentiment']}</span></td>
-                </tr>
-            """
-        
-        table_html += """
-                </tbody>
-            </table>
-        </div>
-        """
-        
-        st.markdown(table_html, unsafe_allow_html=True)
+    # Display in grid format
+    cols_per_row = 3
+    for i in range(0, len(stocks), cols_per_row):
+        cols = st.columns(cols_per_row)
+        for j, stock in enumerate(stocks[i:i+cols_per_row]):
+            with cols[j]:
+                st.markdown(f"""
+                <div class="stock-card {card_class}">
+                    <h4>{stock['symbol']}</h4>
+                    <p><strong>Change:</strong> {stock['change']:+.2f}%</p>
+                    <p><strong>Price:</strong> ₹{stock['price']:.2f}</p>
+                    <p><strong>OI:</strong> {stock['oi']:,.0f}</p>
+                    <p><strong>Volume:</strong> {stock['volume']:,.0f}</p>
+                    <p><strong>Buildup:</strong> {stock['buildup']}</p>
+                    <p><strong>Sentiment:</strong> {stock['sentiment']}</p>
+                </div>
+                """, unsafe_allow_html=True)
 
-def display_summary_metrics(stock_data):
-    """Display summary metrics"""
-    st.header("📈 Market Summary")
+def display_dashboard(data_dict):
+    """Display the main dashboard"""
     
-    cols = st.columns(6)
-    
-    metrics = [
-        ("Long Buildup", len(stock_data['long_buildup']), "#28a745"),
-        ("Short Covering", len(stock_data['short_covering']), "#17a2b8"),
-        ("Short Buildup", len(stock_data['short_buildup']), "#dc3545"),
-        ("Long Unwinding", len(stock_data['long_unwinding']), "#ffc107"),
-        ("Bullish Stocks", len(stock_data['bullish_stocks']), "#28a745"),
-        ("Bearish Stocks", len(stock_data['bearish_stocks']), "#dc3545")
-    ]
-    
-    for i, (label, count, color) in enumerate(metrics):
-        with cols[i]:
-            st.markdown(f"""
-            <div class="metric-card" style="background: linear-gradient(135deg, {color}, #495057);">
-                <h3>{count}</h3>
-                <p>{label}</p>
-            </div>
-            """, unsafe_allow_html=True)
-
-def display_data_debugging_info(data_dict):
-    """Display debugging information about the loaded data structure"""
-    st.header("🔍 Data Structure Analysis")
-    
-    with st.expander("📊 Debug: Show Raw Data Structure", expanded=False):
-        for sheet_name, df in data_dict.items():
-            st.subheader(f"Sheet: {sheet_name}")
-            st.write(f"**Rows:** {len(df)}, **Columns:** {len(df.columns)}")
-            
-            # Show column names
-            st.write("**Column Names:**")
-            cols_per_row = 4
-            col_chunks = [df.columns.tolist()[i:i+cols_per_row] for i in range(0, len(df.columns), cols_per_row)]
-            for chunk in col_chunks:
-                st.write(" | ".join([f"`{col}`" for col in chunk]))
-            
-            # Show first few rows
-            st.write("**Sample Data:**")
-            st.dataframe(df.head(3))
-            
-            # Show data types
-            st.write("**Data Types:**")
-            type_info = []
-            for col in df.columns:
-                dtype = str(df[col].dtype)
-                non_null = df[col].count()
-                type_info.append(f"{col}: {dtype} ({non_null} non-null)")
-            
-            # Display in columns
-            type_chunks = [type_info[i:i+2] for i in range(0, len(type_info), 2)]
-            for chunk in type_chunks:
-                st.write(" | ".join(chunk))
-            
-            st.markdown("---")
-
-def analyze_column_mapping(data_dict):
-    """Analyze and show column mapping for debugging"""
-    st.subheader("🔗 Column Mapping Analysis")
-    
-    mapping_results = {}
-    
-    for sheet_name, df in data_dict.items():
-        if any(term in sheet_name.upper() for term in ['STOCK', 'DASHBOARD', 'DATA']):
-            sheet_mapping = {}
-            
-            # Try to find each expected column
-            expected_columns = {
-                'Symbol': ['STOCK NAME', 'SYMBOL', 'NAME', 'SCRIP', 'STOCK', 'INSTRUMENT'],
-                'Change%': ['CHANGE %', '%', 'CHG', 'CHANGE', 'PCT_CHANGE', '% CHANGE'],
-                'Price': ['PRICE', 'LTP', 'CLOSE', 'LAST', 'LAST_PRICE'],
-                'OI': ['OI', 'OPEN INT', 'OPEN_INTEREST', 'OPENINTEREST'],
-                'Volume': ['VOLUME', 'VOL', 'TRADED_QTY', 'QTY'],
-                'OI_Change': ['Change in OI', 'OI CHG', 'OI_CHANGE', 'CHANGE_IN_OI'],
-                'Buildup': ['Buildup', 'BUILDUP', 'TREND', 'POSITION_TYPE'],
-                'Sentiment': ['SENTIMENT', 'SIGNAL', 'ACTION', 'RECOMMENDATION']
-            }
-            
-            for expected, keywords in expected_columns.items():
-                found_col = find_column_by_keywords(df.columns, keywords)
-                sheet_mapping[expected] = found_col if found_col else "❌ Not Found"
-            
-            mapping_results[sheet_name] = sheet_mapping
-    
-    # Display mapping results
-    for sheet_name, mapping in mapping_results.items():
-        st.write(f"**{sheet_name}:**")
-        cols = st.columns(4)
-        for i, (expected, found) in enumerate(mapping.items()):
-            with cols[i % 4]:
-                status = "✅" if found != "❌ Not Found" else "❌"
-                st.write(f"{status} **{expected}:** {found}")
-        st.markdown("---")
-    
-    return mapping_results
-    """Display complete live F&O dashboard"""
-    
-    # Live header
+    # Header
     st.markdown(f"""
     <div class="dashboard-header">
-        <h1>📊 Complete F&O Trading Dashboard</h1>
+        <h1>📊 F&O Trading Dashboard</h1>
         <p class="live-indicator">● LIVE DATA</p>
         <p>Real-time Analysis - {datetime.now().strftime("%d %B %Y, %H:%M:%S")}</p>
     </div>
     """, unsafe_allow_html=True)
     
     # Extract data
-    sector_data = extract_sector_performance(data_dict)
-    stock_data = extract_complete_stock_data(data_dict)
+    stock_categories = extract_stock_data(data_dict)
+    sector_data = extract_sector_data(data_dict)
     
     # Display sector performance
-    display_sector_performance(sector_data)
+    if sector_data:
+        st.header("📊 Sector Performance")
+        cols = st.columns(min(4, len(sector_data)))
+        for i, (sector, data) in enumerate(sector_data.items()):
+            if i < len(cols):
+                with cols[i]:
+                    sector_class = "bullish-sector" if data['bullish'] > 60 else "bearish-sector" if data['bullish'] < 40 else ""
+                    st.markdown(f"""
+                    <div class="sector-performance {sector_class}">
+                        <h4>{sector}</h4>
+                        <p>Bullish: {data['bullish']:.1f}%</p>
+                        <p>Bearish: {data['bearish']:.1f}%</p>
+                    </div>
+                    """, unsafe_allow_html=True)
     
     # Display summary metrics
-    display_summary_metrics(stock_data)
+    st.header("📈 Market Summary")
+    cols = st.columns(6)
     
-    # Display stock analysis by categories
-    st.header("🎯 Detailed Stock Analysis")
+    metrics = [
+        ("Long Buildup", len(stock_categories['long_buildup'])),
+        ("Short Covering", len(stock_categories['short_covering'])),
+        ("Short Buildup", len(stock_categories['short_buildup'])),
+        ("Long Unwinding", len(stock_categories['long_unwinding'])),
+        ("Bullish Stocks", len(stock_categories['bullish_stocks'])),
+        ("Bearish Stocks", len(stock_categories['bearish_stocks']))
+    ]
     
-    # Create tabs for different categories
+    for i, (label, count) in enumerate(metrics):
+        with cols[i]:
+            st.markdown(f"""
+            <div class="metric-card">
+                <h3>{count}</h3>
+                <p>{label}</p>
+            </div>
+            """, unsafe_allow_html=True)
+    
+    # Stock analysis tabs
+    st.header("🎯 Stock Analysis")
+    
     tabs = st.tabs(["Long Buildup", "Short Covering", "Short Buildup", "Long Unwinding", "All Bullish", "All Bearish"])
     
     with tabs[0]:
-        display_stock_analysis_table(stock_data, 'long_buildup', "🟢 Long Buildup Stocks", "long-buildup")
+        display_stock_cards(stock_categories['long_buildup'], "Long Buildup Stocks", "long-buildup-card")
     
     with tabs[1]:
-        display_stock_analysis_table(stock_data, 'short_covering', "🔵 Short Covering Stocks", "short-covering")
+        display_stock_cards(stock_categories['short_covering'], "Short Covering Stocks", "short-covering-card")
     
     with tabs[2]:
-        display_stock_analysis_table(stock_data, 'short_buildup', "🔴 Short Buildup Stocks", "short-buildup")
+        display_stock_cards(stock_categories['short_buildup'], "Short Buildup Stocks", "short-buildup-card")
     
     with tabs[3]:
-        display_stock_analysis_table(stock_data, 'long_unwinding', "🟡 Long Unwinding Stocks", "long-unwinding")
+        display_stock_cards(stock_categories['long_unwinding'], "Long Unwinding Stocks", "long-unwinding-card")
     
     with tabs[4]:
-        display_stock_analysis_table(stock_data, 'bullish_stocks', "📈 All Bullish Stocks", "bullish-signal")
+        display_stock_cards(stock_categories['bullish_stocks'], "All Bullish Stocks", "long-buildup-card")
     
     with tabs[5]:
-        display_stock_analysis_table(stock_data, 'bearish_stocks', "📉 All Bearish Stocks", "wait-signal")
+        display_stock_cards(stock_categories['bearish_stocks'], "All Bearish Stocks", "short-buildup-card")
     
-    # Data source info
+    # Data info
     st.markdown("---")
+    total_stocks = sum(len(stocks) for stocks in stock_categories.values())
     st.markdown(f"""
     **Data Source:** {len(data_dict)} Excel sheets processed  
     **Last Updated:** {datetime.now().strftime("%H:%M:%S")}  
-    **Total Stocks Analyzed:** {len(stock_data['all_stocks'])}  
-    **Auto-refresh:** Every 30 seconds
+    **Total Stocks Analyzed:** {total_stocks}
     """)
 
-# Main execution
 def main():
-    # Sidebar controls
-    st.sidebar.title("📊 Dashboard Controls")
+    st.sidebar.title("📊 F&O Dashboard")
     
-    # File upload with macro file handling
-    st.sidebar.markdown("### 📁 Upload Options")
-    
-    # Display warning about macro files
-    st.sidebar.warning("⚠️ Macro-enabled files (.xlsm) not supported. Please convert to .xlsx format.")
-    
+    # File upload
+    st.sidebar.success("✅ Supports macro-enabled files (.xlsm)!")
     uploaded_file = st.sidebar.file_uploader(
-        "Upload F&O Excel File", 
-        type=["xlsx", "xls", "xlsm"],
-        help="Supports .xlsx, .xls, and .xlsm (macro-enabled) files"
+        "Upload Excel File", 
+        type=["xlsx", "xls", "xlsm"]
     )
     
-    # Alternative data input methods
-    st.sidebar.markdown("### 🔄 Alternative Input Methods")
+    # Auto-refresh option
+    auto_refresh = st.sidebar.checkbox("Auto Refresh (30s)", value=False)
     
-    data_dict = None
-    
-    # Option to paste CSV data
-    if st.sidebar.checkbox("📋 Paste CSV Data"):
-        csv_data = st.sidebar.text_area(
-            "Paste your stock data (CSV format):",
-            height=150,
-            placeholder="Symbol,Change%,Price,OI,Volume,Buildup,Sentiment\nRELIANCE,1.45,2500,150000,50000,longBuildup,Bullish"
-        )
-        
-        if csv_data:
-            try:
-                import io
-                df = pd.read_csv(io.StringIO(csv_data))
-                st.sidebar.success(f"✅ {len(df)} rows loaded from CSV")
-                data_dict = convert_csv_to_data_dict(df)
-            except Exception as e:
-                st.sidebar.error(f"❌ Error parsing CSV: {str(e)}")
-    
-    # Sample data option for demo
-    if st.sidebar.checkbox("🎯 Load Sample Data"):
-        data_dict = create_sample_data()
-        st.sidebar.success("✅ Sample data loaded for demonstration")
-    
-    # Refresh controls
-    auto_refresh = st.sidebar.checkbox("Auto Refresh (30s)", value=True)
-    
-    if st.sidebar.button("🔄 Manual Refresh"):
+    if st.sidebar.button("🔄 Refresh"):
         st.experimental_rerun()
     
-    # Display current time
-    st.sidebar.markdown(f"**Current Time:** {datetime.now().strftime('%H:%M:%S')}")
+    # Display time
+    st.sidebar.markdown(f"**Time:** {datetime.now().strftime('%H:%M:%S')}")
     
-    # Instructions updated for macro files
-    if not data_dict:
-        st.markdown("""
-        ## 📊 F&O Dashboard - Now Supports Macro Files!
+    if uploaded_file:
+        # Process file
+        file_extension = uploaded_file.name.split('.')[-1]
+        temp_file = f"temp_file.{file_extension}"
         
-        ### ✅ **Supported File Formats:**
-        - **Excel Workbook (.xlsx)**
-        - **Excel 97-2003 (.xls)**
-        - **Excel Macro-Enabled (.xlsm)** - NEW!
-        
-        ### 🔧 **How Macro Files Are Handled:**
-        
-        **What Works:**
-        - ✅ All data extraction from sheets
-        - ✅ Multiple sheet processing  
-        - ✅ Complex formulas (calculated values)
-        - ✅ Charts and tables data
-        
-        **What's Ignored:**
-        - ⚠️ VBA Macros (security reason)
-        - ⚠️ ActiveX controls
-        - ⚠️ Custom functions
-        
-        ### 💡 **Quick Start Options:**
-        
-        **Option 1: Upload Your .xlsm File**
-        - Simply upload your macro-enabled file
-        - The system will extract all data automatically
-        - Macros will be safely ignored
-        
-        **Option 2: Try Sample Data**  
-        - Click "🎯 Load Sample Data" to see the dashboard
-        
-        **Option 3: Manual CSV Input**
-        - Export your data to CSV
-        - Use "📋 Paste CSV Data" option
-        
-        ### 📋 **Expected Data Structure:**
-        ```
-        Stock Name    | Change% | Price | OI      | Volume  | Buildup      | Sentiment
-        RELIANCE      | 1.45    | 2500  | 150000  | 85000   | longBuildup  | Bullish
-        TCS           | 1.87    | 3650  | 125000  | 65000   | longBuildup  | Bullish
-        HDFC          | 1.25    | 1650  | 95000   | 75000   | shortCover   | Bullish
-        ```
-        """)
-    
-    if uploaded_file is not None:
-        # Determine file type and show processing info
-        file_extension = uploaded_file.name.split('.')[-1].lower()
-        
-        if file_extension == 'xlsm':
-            st.info("🔄 Processing macro-enabled file... Extracting data only.")
-        
-        # Save uploaded file with original extension
-        temp_filename = f"temp_fo_file.{file_extension}"
-        with open(temp_filename, "wb") as f:
+        with open(temp_file, "wb") as f:
             f.write(uploaded_file.getvalue())
         
-        # Read and process data
-        with st.spinner(f"Loading {file_extension.upper()} file..."):
-            data_dict = read_comprehensive_data(temp_filename)
-            
-        # Clean up temp file
+        # Load data
+        with st.spinner("Processing Excel file..."):
+            data_dict = read_excel_data(temp_file)
+        
+        # Clean up
         try:
-            os.remove(temp_filename)
+            os.remove(temp_file)
         except:
             pass
-    
-    if data_dict:
-        # Display dashboard
-        display_live_dashboard(data_dict)
         
-        # Auto-refresh functionality
-        if auto_refresh:
-            try:
-                from streamlit_autorefresh import st_autorefresh
-                st_autorefresh(interval=30 * 1000, key="fo_data_refresh")
-            except ImportError:
-                st.sidebar.warning("Install streamlit-autorefresh for auto-refresh: `pip install streamlit-autorefresh`")
+        if data_dict:
+            display_dashboard(data_dict)
+            
+            # Auto-refresh
+            if auto_refresh:
+                try:
+                    from streamlit_autorefresh import st_autorefresh
+                    st_autorefresh(interval=30000, key="dashboard_refresh")
+                except ImportError:
+                    st.sidebar.info("Install streamlit-autorefresh for auto-refresh")
+        else:
+            st.error("Could not process the Excel file")
     
-    elif not data_dict and not uploaded_file:
-        # Show file format help
-        st.info("📁 Please choose one of the options in the sidebar to load your F&O data.")
+    else:
+        st.info("Please upload an Excel file to view the F&O dashboard")
         
-        # Show expected data columns
-        st.markdown("""
-        ### 📊 Expected Data Columns:
-        | Column | Description | Example |
-        |--------|-------------|---------|
-        | **Symbol/Stock Name** | Stock symbol | RELIANCE, TCS, INFY |
-        | **Change %** | Price change percentage | 1.45, -2.15 |
-        | **Price/LTP** | Last traded price | 2500, 1650 |
-        | **OI** | Open Interest | 150000, 95000 |
-        | **Volume** | Trading volume | 85000, 75000 |
-        | **Buildup** | Position type | longBuildup, shortCover |
-        | **Sentiment** | Market sentiment | Bullish, Wait For Signal |
-        """)
+        # Sample data option
+        if st.sidebar.checkbox("🎯 Load Sample Data"):
+            sample_data = {
+                'Sample Sheet': pd.DataFrame({
+                    'STOCK NAME': ['NSE:RELIANCE', 'NSE:TCS', 'NSE:INFY', 'NSE:HDFC'],
+                    'CHANGE %': [2.45, 1.87, -1.25, 0.95],
+                    'PRICE': [2850, 3650, 1750, 1650],
+                    'OI': [145000, 125000, 180000, 95000],
+                    'VOLUME': [85000, 65000, 95000, 75000],
+                    'Buildup': ['longBuildup', 'longBuildup', 'shortBuildup', 'shortCover'],
+                    'SENTIMENT': ['Bullish', 'Bullish', 'Wait For Signal', 'Bullish']
+                })
+            }
+            display_dashboard(sample_data)
 
 if __name__ == "__main__":
     main()
