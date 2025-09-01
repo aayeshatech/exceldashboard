@@ -149,7 +149,53 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-def find_column_by_keywords(columns, keywords):
+def create_sample_data():
+    """Create sample F&O data for demonstration"""
+    sample_stocks = [
+        # Long Buildup stocks
+        {'symbol': 'RELIANCE', 'change': 2.45, 'price': 2850, 'oi': 145000, 'oi_change': 15.2, 'volume': 85000, 'buildup': 'longBuildup', 'sentiment': 'Bullish'},
+        {'symbol': 'TCS', 'change': 1.87, 'price': 3650, 'oi': 125000, 'oi_change': 12.8, 'volume': 65000, 'buildup': 'longBuildup', 'sentiment': 'Bullish'},
+        {'symbol': 'INFY', 'change': 1.65, 'price': 1750, 'oi': 180000, 'oi_change': 18.5, 'volume': 95000, 'buildup': 'longBuildup', 'sentiment': 'Bullish'},
+        
+        # Short Covering stocks
+        {'symbol': 'HDFC', 'change': 1.25, 'price': 1650, 'oi': 95000, 'oi_change': -8.5, 'volume': 75000, 'buildup': 'shortCover', 'sentiment': 'Bullish'},
+        {'symbol': 'ICICIBANK', 'change': 0.95, 'price': 1150, 'oi': 125000, 'oi_change': -12.3, 'volume': 85000, 'buildup': 'shortCover', 'sentiment': 'Wait For Signal'},
+        
+        # Short Buildup stocks
+        {'symbol': 'BAJFINANCE', 'change': -2.15, 'price': 6800, 'oi': 85000, 'oi_change': 22.5, 'volume': 45000, 'buildup': 'shortBuildup', 'sentiment': 'Wait For Signal'},
+        {'symbol': 'HDFCBANK', 'change': -1.85, 'price': 1580, 'oi': 195000, 'oi_change': 15.8, 'volume': 125000, 'buildup': 'shortBuildup', 'sentiment': 'Wait For Signal'},
+        
+        # Long Unwinding stocks
+        {'symbol': 'WIPRO', 'change': -1.45, 'price': 450, 'oi': 65000, 'oi_change': -18.5, 'volume': 55000, 'buildup': 'longUnwind', 'sentiment': 'Wait For Signal'},
+        {'symbol': 'TECHM', 'change': -0.85, 'price': 1250, 'oi': 75000, 'oi_change': -15.2, 'volume': 65000, 'buildup': 'longUnwind', 'sentiment': 'Wait For Signal'},
+        
+        # Additional stocks
+        {'symbol': 'ASIANPAINT', 'change': 1.97, 'price': 3200, 'oi': 55000, 'oi_change': 8.5, 'volume': 35000, 'buildup': 'longBuildup', 'sentiment': 'Bullish'},
+        {'symbol': 'MARUTI', 'change': 1.21, 'price': 11500, 'oi': 45000, 'oi_change': 5.2, 'volume': 25000, 'buildup': 'shortCover', 'sentiment': 'Bullish'},
+        {'symbol': 'LT', 'change': -1.15, 'price': 3450, 'oi': 85000, 'oi_change': 12.5, 'volume': 65000, 'buildup': 'shortBuildup', 'sentiment': 'Wait For Signal'},
+    ]
+    
+    # Convert to DataFrame format that matches expected structure
+    df = pd.DataFrame(sample_stocks)
+    
+    # Create a data_dict structure
+    data_dict = {
+        'Sample_Stock_Data': df,
+        'Dashboard': pd.DataFrame({
+            'Sector': ['NIFTY 50', 'NIFTY BANK', 'IT', 'PHARMA', 'AUTO', 'METAL'],
+            'BULLISH': [65.5, 45.2, 78.8, 55.5, 60.0, 35.5],
+            'BEARISH': [34.5, 54.8, 21.2, 44.5, 40.0, 64.5]
+        })
+    }
+    
+    return data_dict
+
+def convert_csv_to_data_dict(df):
+    """Convert CSV DataFrame to expected data_dict format"""
+    data_dict = {
+        'CSV_Stock_Data': df
+    }
+    return data_dict
     """Find a column that contains any of the given keywords"""
     for col in columns:
         col_upper = str(col).upper()
@@ -499,8 +545,41 @@ def main():
     # Sidebar controls
     st.sidebar.title("📊 Dashboard Controls")
     
-    # File upload
-    uploaded_file = st.sidebar.file_uploader("Upload F&O Excel File", type=["xlsx", "xls"])
+    # File upload with macro file handling
+    st.sidebar.markdown("### 📁 Upload Options")
+    
+    # Display warning about macro files
+    st.sidebar.warning("⚠️ Macro-enabled files (.xlsm) not supported. Please convert to .xlsx format.")
+    
+    uploaded_file = st.sidebar.file_uploader(
+        "Upload F&O Excel File", 
+        type=["xlsx", "xls"],
+        help="Convert .xlsm files to .xlsx format before uploading"
+    )
+    
+    # Alternative data input methods
+    st.sidebar.markdown("### 🔄 Alternative Input Methods")
+    
+    # Option to paste CSV data
+    if st.sidebar.checkbox("📋 Paste CSV Data"):
+        csv_data = st.sidebar.text_area(
+            "Paste your stock data (CSV format):",
+            height=150,
+            placeholder="Symbol,Change%,Price,OI,Volume,Buildup,Sentiment\nRELIANCE,1.45,2500,150000,50000,longBuildup,Bullish"
+        )
+        
+        if csv_data:
+            try:
+                import io
+                df = pd.read_csv(io.StringIO(csv_data))
+                st.sidebar.success(f"✅ {len(df)} rows loaded from CSV")
+                return df
+            except Exception as e:
+                st.sidebar.error(f"❌ Error parsing CSV: {str(e)}")
+    
+    # Sample data option for demo
+    if st.sidebar.checkbox("🎯 Load Sample Data"):
+        return create_sample_data()
     
     # Refresh controls
     auto_refresh = st.sidebar.checkbox("Auto Refresh (30s)", value=True)
