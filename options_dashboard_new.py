@@ -206,24 +206,72 @@ def convert_csv_to_data_dict(df):
 
 @st.cache_data(ttl=30)  # Cache for 30 seconds for auto-refresh
 def read_comprehensive_data(file_path):
-    """Read all relevant sheets for F&O analysis"""
+    """Read all relevant sheets for F&O analysis - supports .xlsm files"""
     try:
-        excel_file = pd.ExcelFile(file_path)
+        # Try reading with openpyxl engine which supports .xlsm files
+        try:
+            excel_file = pd.ExcelFile(file_path, engine='openpyxl')
+        except:
+            # Fallback to default engine
+            excel_file = pd.ExcelFile(file_path)
+            
         data_dict = {}
         
+        st.sidebar.info(f"📊 Processing {len(excel_file.sheet_names)} sheets...")
+        
         # Read all available sheets
-        for sheet_name in excel_file.sheet_names:
+        for i, sheet_name in enumerate(excel_file.sheet_names):
             try:
-                df = pd.read_excel(file_path, sheet_name=sheet_name)
+                # Show progress
+                progress = (i + 1) / len(excel_file.sheet_names)
+                st.sidebar.progress(progress, text=f"Reading sheet: {sheet_name}")
+                
+                # Read sheet with error handling for macro-enabled files
+                df = pd.read_excel(
+                    file_path, 
+                    sheet_name=sheet_name,
+                    engine='openpyxl'  # Explicitly use openpyxl for .xlsm support
+                )
+                
                 if not df.empty:
                     data_dict[sheet_name] = df
+                    st.sidebar.success(f"✅ {sheet_name}: {len(df)} rows")
+                else:
+                    st.sidebar.warning(f"⚠️ {sheet_name}: Empty sheet")
+                    
             except Exception as e:
-                st.write(f"Error reading sheet {sheet_name}: {str(e)}")
+                st.sidebar.error(f"❌ Error reading {sheet_name}: {str(e)}")
                 continue
         
+        st.sidebar.success(f"🎉 Successfully loaded {len(data_dict)} sheets")
         return data_dict
+        
     except Exception as e:
-        st.error(f"Error reading Excel file: {str(e)}")
+        st.sidebar.error(f"❌ Error reading Excel file: {str(e)}")
+        
+        # Try alternative approach for problematic macro files
+        try:
+            st.sidebar.info("🔄 Trying alternative method for macro file...")
+            
+            # Use xlrd for older .xls files or specific .xlsm handling
+            if file_path.endswith('.xlsm'):
+                # For .xlsm files, try reading without macros
+                excel_file = pd.ExcelFile(file_path, engine='openpyxl')
+                data_dict = {}
+                
+                for sheet_name in excel_file.sheet_names:
+                    try:
+                        df = pd.read_excel(file_path, sheet_name=sheet_name, engine='openpyxl')
+                        if not df.empty:
+                            data_dict[sheet_name] = df
+                    except:
+                        continue
+                        
+                return data_dict
+            
+        except Exception as e2:
+            st.sidebar.error(f"❌ Alternative method failed: {str(e2)}")
+            
         return {}
 
 def extract_sector_performance(data_dict):
@@ -553,12 +601,14 @@ def main():
     
     uploaded_file = st.sidebar.file_uploader(
         "Upload F&O Excel File", 
-        type=["xlsx", "xls"],
-        help="Convert .xlsm files to .xlsx format before uploading"
+        type=["xlsx", "xls", "xlsm"],
+        help="Supports .xlsx, .xls, and .xlsm (macro-enabled) files"
     )
     
     # Alternative data input methods
     st.sidebar.markdown("### 🔄 Alternative Input Methods")
+    
+    data_dict = None
     
     # Option to paste CSV data
     if st.sidebar.checkbox("📋 Paste CSV Data"):
@@ -573,13 +623,14 @@ def main():
                 import io
                 df = pd.read_csv(io.StringIO(csv_data))
                 st.sidebar.success(f"✅ {len(df)} rows loaded from CSV")
-                return df
+                data_dict = convert_csv_to_data_dict(df)
             except Exception as e:
                 st.sidebar.error(f"❌ Error parsing CSV: {str(e)}")
     
     # Sample data option for demo
     if st.sidebar.checkbox("🎯 Load Sample Data"):
-        return create_sample_data()
+        data_dict = create_sample_data()
+        st.sidebar.success("✅ Sample data loaded for demonstration")
     
     # Refresh controls
     auto_refresh = st.sidebar.checkbox("Auto Refresh (30s)", value=True)
@@ -590,6 +641,38 @@ def main():
     # Display current time
     st.sidebar.markdown(f"**Current Time:** {datetime.now().strftime('%H:%M:%S')}")
     
+    # Instructions for macro files
+    if not data_dict:
+        st.markdown("""
+        ## 🚫 Macro File Not Supported
+        
+        Your Excel file contains macros (.xlsm format) which cannot be uploaded directly. Here are your options:
+        
+        ### 💡 **Solution 1: Convert to .xlsx**
+        1. Open your Excel file
+        2. Go to **File → Save As**
+        3. Choose **Excel Workbook (.xlsx)** format
+        4. Upload the converted file
+        
+        ### 💡 **Solution 2: Export to CSV**
+        1. Open your Excel file
+        2. Select the data sheet
+        3. Go to **File → Save As**
+        4. Choose **CSV (Comma delimited)** format
+        5. Use the "📋 Paste CSV Data" option in sidebar
+        
+        ### 💡 **Solution 3: Try Sample Data**
+        - Check "🎯 Load Sample Data" in the sidebar to see the dashboard in action
+        
+        ### 📋 **Expected CSV Format:**
+        ```
+        Symbol,Change%,Price,OI,Volume,Buildup,Sentiment
+        RELIANCE,1.45,2500,150000,50000,longBuildup,Bullish
+        TCS,1.87,3650,125000,65000,longBuildup,Bullish
+        HDFC,1.25,1650,95000,75000,shortCover,Wait For Signal
+        ```
+        """)
+    
     if uploaded_file is not None:
         # Save uploaded file
         with open("temp_fo_file.xlsx", "wb") as f:
@@ -598,33 +681,35 @@ def main():
         # Read and process data
         with st.spinner("Loading F&O data..."):
             data_dict = read_comprehensive_data("temp_fo_file.xlsx")
+    
+    if data_dict:
+        # Display dashboard
+        display_live_dashboard(data_dict)
         
-        if data_dict:
-            # Display dashboard
-            display_live_dashboard(data_dict)
-            
-            # Auto-refresh functionality
-            if auto_refresh:
-                try:
-                    from streamlit_autorefresh import st_autorefresh
-                    st_autorefresh(interval=30 * 1000, key="fo_data_refresh")
-                except ImportError:
-                    st.sidebar.warning("Install streamlit-autorefresh for auto-refresh: `pip install streamlit-autorefresh`")
-        else:
-            st.error("❌ Could not read data from the uploaded file. Please check the file format.")
-    else:
-        st.info("📁 Please upload an Excel file with F&O data to view the complete dashboard.")
+        # Auto-refresh functionality
+        if auto_refresh:
+            try:
+                from streamlit_autorefresh import st_autorefresh
+                st_autorefresh(interval=30 * 1000, key="fo_data_refresh")
+            except ImportError:
+                st.sidebar.warning("Install streamlit-autorefresh for auto-refresh: `pip install streamlit-autorefresh`")
+    
+    elif not data_dict and not uploaded_file:
+        # Show file format help
+        st.info("📁 Please choose one of the options in the sidebar to load your F&O data.")
         
-        # Show sample data structure expected
+        # Show expected data columns
         st.markdown("""
-        ### Expected Excel Data Structure:
-        - **Stock Name/Symbol** column
-        - **Change %** column
-        - **Price/LTP** column  
-        - **OI (Open Interest)** column
-        - **Volume** column
-        - **Buildup** column (longBuildup, shortCover, etc.)
-        - **Sentiment** column
+        ### 📊 Expected Data Columns:
+        | Column | Description | Example |
+        |--------|-------------|---------|
+        | **Symbol/Stock Name** | Stock symbol | RELIANCE, TCS, INFY |
+        | **Change %** | Price change percentage | 1.45, -2.15 |
+        | **Price/LTP** | Last traded price | 2500, 1650 |
+        | **OI** | Open Interest | 150000, 95000 |
+        | **Volume** | Trading volume | 85000, 75000 |
+        | **Buildup** | Position type | longBuildup, shortCover |
+        | **Sentiment** | Market sentiment | Bullish, Wait For Signal |
         """)
 
 if __name__ == "__main__":
