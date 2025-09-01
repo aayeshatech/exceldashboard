@@ -542,7 +542,80 @@ def display_summary_metrics(stock_data):
             </div>
             """, unsafe_allow_html=True)
 
-def display_live_dashboard(data_dict):
+def display_data_debugging_info(data_dict):
+    """Display debugging information about the loaded data structure"""
+    st.header("🔍 Data Structure Analysis")
+    
+    with st.expander("📊 Debug: Show Raw Data Structure", expanded=False):
+        for sheet_name, df in data_dict.items():
+            st.subheader(f"Sheet: {sheet_name}")
+            st.write(f"**Rows:** {len(df)}, **Columns:** {len(df.columns)}")
+            
+            # Show column names
+            st.write("**Column Names:**")
+            cols_per_row = 4
+            col_chunks = [df.columns.tolist()[i:i+cols_per_row] for i in range(0, len(df.columns), cols_per_row)]
+            for chunk in col_chunks:
+                st.write(" | ".join([f"`{col}`" for col in chunk]))
+            
+            # Show first few rows
+            st.write("**Sample Data:**")
+            st.dataframe(df.head(3))
+            
+            # Show data types
+            st.write("**Data Types:**")
+            type_info = []
+            for col in df.columns:
+                dtype = str(df[col].dtype)
+                non_null = df[col].count()
+                type_info.append(f"{col}: {dtype} ({non_null} non-null)")
+            
+            # Display in columns
+            type_chunks = [type_info[i:i+2] for i in range(0, len(type_info), 2)]
+            for chunk in type_chunks:
+                st.write(" | ".join(chunk))
+            
+            st.markdown("---")
+
+def analyze_column_mapping(data_dict):
+    """Analyze and show column mapping for debugging"""
+    st.subheader("🔗 Column Mapping Analysis")
+    
+    mapping_results = {}
+    
+    for sheet_name, df in data_dict.items():
+        if any(term in sheet_name.upper() for term in ['STOCK', 'DASHBOARD', 'DATA']):
+            sheet_mapping = {}
+            
+            # Try to find each expected column
+            expected_columns = {
+                'Symbol': ['STOCK NAME', 'SYMBOL', 'NAME', 'SCRIP', 'STOCK', 'INSTRUMENT'],
+                'Change%': ['CHANGE %', '%', 'CHG', 'CHANGE', 'PCT_CHANGE', '% CHANGE'],
+                'Price': ['PRICE', 'LTP', 'CLOSE', 'LAST', 'LAST_PRICE'],
+                'OI': ['OI', 'OPEN INT', 'OPEN_INTEREST', 'OPENINTEREST'],
+                'Volume': ['VOLUME', 'VOL', 'TRADED_QTY', 'QTY'],
+                'OI_Change': ['Change in OI', 'OI CHG', 'OI_CHANGE', 'CHANGE_IN_OI'],
+                'Buildup': ['Buildup', 'BUILDUP', 'TREND', 'POSITION_TYPE'],
+                'Sentiment': ['SENTIMENT', 'SIGNAL', 'ACTION', 'RECOMMENDATION']
+            }
+            
+            for expected, keywords in expected_columns.items():
+                found_col = find_column_by_keywords(df.columns, keywords)
+                sheet_mapping[expected] = found_col if found_col else "❌ Not Found"
+            
+            mapping_results[sheet_name] = sheet_mapping
+    
+    # Display mapping results
+    for sheet_name, mapping in mapping_results.items():
+        st.write(f"**{sheet_name}:**")
+        cols = st.columns(4)
+        for i, (expected, found) in enumerate(mapping.items()):
+            with cols[i % 4]:
+                status = "✅" if found != "❌ Not Found" else "❌"
+                st.write(f"{status} **{expected}:** {found}")
+        st.markdown("---")
+    
+    return mapping_results
     """Display complete live F&O dashboard"""
     
     # Live header
