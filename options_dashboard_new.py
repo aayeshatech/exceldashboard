@@ -4,7 +4,7 @@ import numpy as np
 from datetime import datetime
 import os
 
-st.set_page_config(page_title="Complete F&O Trading Dashboard", page_icon="📊", layout="wide")
+st.set_page_config(page_title="F&O Trading Dashboard", page_icon="📊", layout="wide")
 
 # Enhanced CSS for comprehensive display
 st.markdown("""
@@ -18,7 +18,6 @@ st.markdown("""
     margin-bottom: 2rem;
     box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
 }
-
 .sector-performance {
     background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
     color: white;
@@ -28,15 +27,12 @@ st.markdown("""
     text-align: center;
     box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
 }
-
 .bullish-sector {
     background: linear-gradient(135deg, #28a745, #20c997) !important;
 }
-
 .bearish-sector {
     background: linear-gradient(135deg, #dc3545, #fd7e14) !important;
 }
-
 .stock-card {
     background: white;
     border-radius: 8px;
@@ -45,27 +41,22 @@ st.markdown("""
     box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
     border-left: 5px solid;
 }
-
 .long-buildup-card {
     border-left-color: #28a745;
     background: linear-gradient(135deg, rgba(40, 167, 69, 0.1), rgba(255, 255, 255, 1));
 }
-
 .short-covering-card {
     border-left-color: #17a2b8;
     background: linear-gradient(135deg, rgba(23, 162, 184, 0.1), rgba(255, 255, 255, 1));
 }
-
 .short-buildup-card {
     border-left-color: #dc3545;
     background: linear-gradient(135deg, rgba(220, 53, 69, 0.1), rgba(255, 255, 255, 1));
 }
-
 .long-unwinding-card {
     border-left-color: #ffc107;
     background: linear-gradient(135deg, rgba(255, 193, 7, 0.1), rgba(255, 255, 255, 1));
 }
-
 .metric-card {
     background: linear-gradient(135deg, #667eea, #764ba2);
     color: white;
@@ -74,13 +65,11 @@ st.markdown("""
     text-align: center;
     margin: 0.5rem;
 }
-
 .live-indicator {
     animation: pulse 2s infinite;
     color: #28a745;
     font-weight: bold;
 }
-
 @keyframes pulse {
     0% { opacity: 1; }
     50% { opacity: 0.5; }
@@ -122,69 +111,92 @@ def read_excel_data(file_path):
         return {}
 
 def extract_sector_data(data_dict):
-    """Extract sector performance data specifically from columns X and Z"""
+    """Extract sector performance data specifically from columns X and Z in Sector Dashboard sheet"""
     sectors = {}
     
-    for sheet_name, df in data_dict.items():
-        # Look for sector dashboard sheet
-        if 'SECTOR' in sheet_name.upper() or 'DASHBOARD' in sheet_name.upper():
+    # Look specifically for the Sector Dashboard sheet
+    target_sheet = None
+    for sheet_name in data_dict.keys():
+        if 'SECTOR DASHBOARD' in sheet_name.upper():
+            target_sheet = sheet_name
+            break
+    
+    if target_sheet is None:
+        st.sidebar.error("Sector Dashboard sheet not found")
+        return sectors
+    
+    df = data_dict[target_sheet]
+    st.sidebar.info(f"Processing Sector Dashboard sheet with {len(df)} rows")
+    
+    # Get column names
+    col_names = list(df.columns)
+    st.sidebar.write(f"Column names: {col_names}")
+    
+    # Find X and Z columns by name
+    x_col = None
+    z_col = None
+    
+    for col in col_names:
+        col_str = str(col).strip().upper()
+        if 'X' in col_str:
+            x_col = col
+        if 'Z' in col_str:
+            z_col = col
+    
+    # If not found by name, try by index (23 and 25)
+    if x_col is None and len(col_names) > 23:
+        x_col = col_names[23]
+        st.sidebar.info(f"Using index 23 for X column: {x_col}")
+    
+    if z_col is None and len(col_names) > 25:
+        z_col = col_names[25]
+        st.sidebar.info(f"Using index 25 for Z column: {z_col}")
+    
+    if x_col is None or z_col is None:
+        st.sidebar.error(f"Could not find X column ({x_col}) or Z column ({z_col})")
+        return sectors
+    
+    st.sidebar.success(f"Found X column: {x_col}, Z column: {z_col}")
+    
+    # Extract data from these columns
+    for index, row in df.iterrows():
+        try:
+            # Get sector name from X column
+            sector_name = str(row[x_col]).strip()
             
-            # Get column names (X and Z columns)
-            col_names = list(df.columns)
+            # Skip empty rows
+            if not sector_name or sector_name == 'nan':
+                continue
             
-            # Find X and Z columns (columns 23 and 25 if 0-indexed)
-            x_col_idx = None
-            z_col_idx = None
+            # Get bullish percentage from Z column
+            bullish_val = None
+            z_value = row[z_col]
             
-            for i, col_name in enumerate(col_names):
-                if 'X' in str(col_name).upper() or i == 23:  # Column X (index 23)
-                    x_col_idx = i
-                elif 'Z' in str(col_name).upper() or i == 25:  # Column Z (index 25)
-                    z_col_idx = i
+            if pd.notna(z_value):
+                try:
+                    # Handle percentage values (e.g., "0.4%")
+                    if isinstance(z_value, str) and '%' in z_value:
+                        bullish_val = float(z_value.replace('%', '').strip())
+                    else:
+                        bullish_val = float(z_value)
+                except:
+                    pass
             
-            if x_col_idx is not None and z_col_idx is not None:
-                st.sidebar.info(f"Found sector data in {sheet_name}: X-col={x_col_idx}, Z-col={z_col_idx}")
+            if bullish_val is not None:
+                sectors[sector_name] = {
+                    'bullish': bullish_val, 
+                    'bearish': 100 - bullish_val
+                }
+                st.sidebar.success(f"Added sector: {sector_name} - Bullish: {bullish_val}%")
                 
-                # Extract sector data from these columns
-                for index, row in df.iterrows():
-                    try:
-                        # Get sector name from X column
-                        sector_name = str(row.iloc[x_col_idx]).strip()
-                        
-                        # Skip empty rows or non-sector rows
-                        if (not sector_name or sector_name == 'nan' or 
-                            not any(keyword in sector_name.upper() for keyword in 
-                                   ['NIFTY', 'BANK', 'FIN', 'IT', 'AUTO', 'PHARMA', 'METAL', 'OIL', 'FMCG'])):
-                            continue
-                        
-                        # Get bullish percentage from Z column
-                        bullish_val = None
-                        z_value = row.iloc[z_col_idx]
-                        
-                        if pd.notna(z_value):
-                            try:
-                                # Handle percentage values (e.g., "0.4%")
-                                if isinstance(z_value, str) and '%' in z_value:
-                                    bullish_val = float(z_value.replace('%', '').strip())
-                                else:
-                                    bullish_val = float(z_value)
-                            except:
-                                pass
-                        
-                        if bullish_val is not None and 0 <= bullish_val <= 100:
-                            sectors[sector_name] = {
-                                'bullish': bullish_val, 
-                                'bearish': 100 - bullish_val
-                            }
-                            st.sidebar.success(f"Added sector: {sector_name} - Bullish: {bullish_val}%")
-                            
-                    except Exception as e:
-                        continue
+        except Exception as e:
+            st.sidebar.error(f"Error processing row {index}: {str(e)}")
+            continue
     
     return sectors
 
 def extract_stock_data(data_dict):
-    """Extract and categorize stock data - Fixed to match your exact Excel format"""
+    """Extract and categorize stock data - Simplified version"""
     categories = {
         'long_buildup': [],
         'short_covering': [],
@@ -194,84 +206,94 @@ def extract_stock_data(data_dict):
         'bearish_stocks': []
     }
     
-    for sheet_name, df in data_dict.items():
-        # Look specifically for sheets like "Nifty 50 Bullish Stock"
-        if any(term in sheet_name for term in ['Bullish Stock', 'Bearish Stock', 'Stock Dashboard', 'NIFTY']):
+    # Look for Nifty 50 Bullish Stock sheet
+    target_sheet = None
+    for sheet_name in data_dict.keys():
+        if 'NIFTY 50 BULLISH STOCK' in sheet_name.upper():
+            target_sheet = sheet_name
+            break
+    
+    if target_sheet is None:
+        st.sidebar.warning("Nifty 50 Bullish Stock sheet not found")
+        return categories
+    
+    df = data_dict[target_sheet]
+    st.sidebar.info(f"Processing {target_sheet} sheet with {len(df)} rows")
+    
+    # Display column names for debugging
+    st.sidebar.write(f"Column names: {list(df.columns)}")
+    
+    # Process rows
+    for index, row in df.iterrows():
+        try:
+            # Extract symbol (first column)
+            symbol = str(row.iloc[0]).strip()
+            if not symbol or symbol == 'nan':
+                continue
+                
+            # Clean symbol name - remove NSE= prefix
+            if symbol.startswith('NSE='):
+                symbol = symbol[4:]
             
-            # Map exact column names from your Excel
-            column_mapping = {}
+            # Get change percentage (second column)
+            try:
+                change = float(row.iloc[1]) if pd.notna(row.iloc[1]) else 0
+            except:
+                change = 0
             
-            for col in df.columns:
-                col_str = str(col).strip()
-                if 'STOCK NAME' in col_str:
-                    column_mapping['symbol'] = col
-                elif 'CHANGE' in col_str and '%' in col_str:
-                    column_mapping['change'] = col
-                elif 'PRICE' in col_str:
-                    column_mapping['price'] = col
-                elif 'OI' in col_str and 'Change' not in col_str:
-                    column_mapping['oi'] = col
-                elif 'Volume' in col_str and 'Fut' not in col_str:
-                    column_mapping['volume'] = col
-                elif 'Building' in col_str or 'Buildup' in col_str:
-                    column_mapping['buildup'] = col
-                elif 'SENTIMENT' in col_str:
-                    column_mapping['sentiment'] = col
+            # Get price (third column)
+            try:
+                price = float(row.iloc[2]) if pd.notna(row.iloc[2]) else 0
+            except:
+                price = 0
             
-            # Process rows if we have the required columns
-            if 'symbol' in column_mapping and 'change' in column_mapping:
-                for index, row in df.iterrows():
-                    try:
-                        # Extract symbol
-                        symbol = str(row[column_mapping['symbol']]) if pd.notna(row[column_mapping['symbol']]) else ''
-                        if not symbol or symbol == 'nan' or symbol == '':
-                            continue
-                            
-                        # Clean symbol name - remove NSE= prefix (your data uses = instead of :)
-                        if symbol.startswith('NSE='):
-                            symbol = symbol[4:]  # Remove 'NSE=' prefix
-                        
-                        # Get change percentage
-                        try:
-                            change = float(row[column_mapping['change']]) if pd.notna(row[column_mapping['change']]) else 0
-                        except:
-                            change = 0
-                        
-                        # Get other values
-                        price = float(row[column_mapping['price']]) if 'price' in column_mapping and pd.notna(row[column_mapping['price']]) else 0
-                        oi = float(row[column_mapping['oi']]) if 'oi' in column_mapping and pd.notna(row[column_mapping['oi']]) else 0
-                        volume = float(row[column_mapping['volume']]) if 'volume' in column_mapping and pd.notna(row[column_mapping['volume']]) else 0
-                        buildup = str(row[column_mapping['buildup']]).strip() if 'buildup' in column_mapping and pd.notna(row[column_mapping['buildup']]) else ''
-                        sentiment = str(row[column_mapping['sentiment']]).strip() if 'sentiment' in column_mapping and pd.notna(row[column_mapping['sentiment']]) else ''
-                        
-                        stock_info = {
-                            'symbol': symbol,
-                            'change': change,
-                            'price': price,
-                            'oi': oi,
-                            'volume': volume,
-                            'buildup': buildup,
-                            'sentiment': sentiment
-                        }
-                        
-                        # Categorize by buildup type (exact match from your data)
-                        if buildup == 'LongBuilding':
-                            categories['long_buildup'].append(stock_info)
-                        elif buildup == 'Shortcover':
-                            categories['short_covering'].append(stock_info)
-                        elif buildup == 'ShortBuildup':
-                            categories['short_buildup'].append(stock_info)
-                        elif buildup == 'LongUnwinding':
-                            categories['long_unwinding'].append(stock_info)
-                        
-                        # Also categorize by performance
-                        if change > 0.3:
-                            categories['bullish_stocks'].append(stock_info)
-                        elif change < -0.3:
-                            categories['bearish_stocks'].append(stock_info)
-                            
-                    except Exception as e:
-                        continue
+            # Get OI (fourth column)
+            try:
+                oi = float(row.iloc[3]) if pd.notna(row.iloc[3]) else 0
+            except:
+                oi = 0
+            
+            # Get volume (fifth column)
+            try:
+                volume = float(row.iloc[4]) if pd.notna(row.iloc[4]) else 0
+            except:
+                volume = 0
+            
+            # Get buildup type (sixth column)
+            buildup = str(row.iloc[5]).strip() if pd.notna(row.iloc[5]) else ''
+            
+            # Get sentiment (seventh column)
+            sentiment = str(row.iloc[6]).strip() if pd.notna(row.iloc[6]) else ''
+            
+            stock_info = {
+                'symbol': symbol,
+                'change': change,
+                'price': price,
+                'oi': oi,
+                'volume': volume,
+                'buildup': buildup,
+                'sentiment': sentiment
+            }
+            
+            # Categorize by buildup type
+            if buildup == 'LongBuilding':
+                categories['long_buildup'].append(stock_info)
+            elif buildup == 'Shortcover':
+                categories['short_covering'].append(stock_info)
+            elif buildup == 'ShortBuildup':
+                categories['short_buildup'].append(stock_info)
+            elif buildup == 'LongUnwinding':
+                categories['long_unwinding'].append(stock_info)
+            
+            # Also categorize by performance
+            if change > 0.3:
+                categories['bullish_stocks'].append(stock_info)
+            elif change < -0.3:
+                categories['bearish_stocks'].append(stock_info)
+                
+        except Exception as e:
+            st.sidebar.error(f"Error processing row {index}: {str(e)}")
+            continue
     
     # Sort categories
     for category in categories:
@@ -320,17 +342,7 @@ def display_dashboard(data_dict):
     </div>
     """, unsafe_allow_html=True)
     
-    # Debug mode toggle
-    debug_mode = st.checkbox("🔍 Debug Mode - Show Processing Details", value=False)
-    
-    if debug_mode:
-        st.subheader("📋 Available Sheets")
-        for sheet_name, df in data_dict.items():
-            with st.expander(f"Sheet: {sheet_name} ({len(df)} rows)"):
-                st.write("**Columns:**", list(df.columns))
-                st.dataframe(df.head(3))
-    
-    # Extract data - Focus on sector data first
+    # Extract data
     sector_data = extract_sector_data(data_dict)
     stock_categories = extract_stock_data(data_dict)
     
@@ -374,16 +386,6 @@ def display_dashboard(data_dict):
             </div>
             """, unsafe_allow_html=True)
     
-    # Debug: Show extraction results
-    if debug_mode:
-        st.subheader("🔍 Extraction Results")
-        st.write("**Sector Data:**", sector_data)
-        for category, stocks in stock_categories.items():
-            st.write(f"**{category}:** {len(stocks)} stocks")
-            if stocks:
-                sample_stock = stocks[0]
-                st.write(f"Sample: {sample_stock['symbol']} - Change: {sample_stock['change']}% - Buildup: {sample_stock['buildup']}")
-    
     # Stock analysis tabs
     st.header("🎯 Stock Analysis")
     
@@ -415,12 +417,6 @@ def display_dashboard(data_dict):
     **Last Updated:** {datetime.now().strftime("%H:%M:%S")}  
     **Total Stocks Analyzed:** {total_stocks}
     """)
-    
-    # Sheet summary
-    if debug_mode:
-        with st.expander("📄 All Sheet Names"):
-            for sheet_name in data_dict.keys():
-                st.write(f"• {sheet_name}")
 
 def main():
     st.sidebar.title("📊 F&O Dashboard")
@@ -481,6 +477,15 @@ def main():
                 'Sector Dashboard': pd.DataFrame({
                     'Unnamed: 23': ['NSE:NIFTYNXT50', 'NSE:HDFCBANK', 'NSE:RBLBANK', 'NSE:YESBANK'],
                     'Unnamed: 25': ['0.0%', '0.4%', '0.8%', '0.5%']
+                }),
+                'Nifty 50 Bullish Stock': pd.DataFrame({
+                    'Stock Name': ['NSE:INFY', 'NSE:ASIANPAINT', 'NSE:HDFCBANK'],
+                    'Change %': ['1.91%', '2.12%', '0.85%'],
+                    'Price': [1497.7, 3456.8, 1567.3],
+                    'OI': [12000, 8500, 9200],
+                    'Volume': [150000, 98000, 110000],
+                    'Buildup': ['LongBuilding', 'LongBuilding', 'Shortcover'],
+                    'Sentiment': ['Bullish', 'Bullish', 'ShortCover']
                 })
             }
             display_dashboard(sample_data)
