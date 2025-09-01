@@ -114,49 +114,44 @@ def extract_sector_data(data_dict):
     """Extract sector performance data specifically from columns X and Z in Sector Dashboard sheet"""
     sectors = {}
     
-    # Look specifically for the Sector Dashboard sheet
+    # Debug: Print all sheet names
+    st.sidebar.write("Available sheets:", list(data_dict.keys()))
+    
+    # Look for a sheet that contains both 'SECTOR' and 'DASHBOARD' (case-insensitive)
     target_sheet = None
     for sheet_name in data_dict.keys():
-        if 'SECTOR DASHBOARD' in sheet_name.upper():
+        if 'SECTOR' in sheet_name.upper() and 'DASHBOARD' in sheet_name.upper():
             target_sheet = sheet_name
             break
     
     if target_sheet is None:
         st.sidebar.error("Sector Dashboard sheet not found")
+        # Try to find any sheet that might contain sector data
+        for sheet_name in data_dict.keys():
+            if 'SECTOR' in sheet_name.upper():
+                target_sheet = sheet_name
+                st.sidebar.warning(f"Found possible sector sheet: {sheet_name}")
+                break
+    
+    if target_sheet is None:
+        st.sidebar.error("No sector-related sheet found")
         return sectors
     
     df = data_dict[target_sheet]
-    st.sidebar.info(f"Processing Sector Dashboard sheet with {len(df)} rows")
+    st.sidebar.info(f"Processing sheet: {target_sheet} with {len(df)} rows")
     
-    # Get column names
+    # Get column names and indices
     col_names = list(df.columns)
     st.sidebar.write(f"Column names: {col_names}")
     
-    # Find X and Z columns by name
-    x_col = None
-    z_col = None
-    
-    for col in col_names:
-        col_str = str(col).strip().upper()
-        if 'X' in col_str:
-            x_col = col
-        if 'Z' in col_str:
-            z_col = col
-    
-    # If not found by name, try by index (23 and 25)
-    if x_col is None and len(col_names) > 23:
-        x_col = col_names[23]
-        st.sidebar.info(f"Using index 23 for X column: {x_col}")
-    
-    if z_col is None and len(col_names) > 25:
-        z_col = col_names[25]
-        st.sidebar.info(f"Using index 25 for Z column: {z_col}")
-    
-    if x_col is None or z_col is None:
-        st.sidebar.error(f"Could not find X column ({x_col}) or Z column ({z_col})")
+    # Try to get columns by index (X is 23, Z is 25)
+    if len(col_names) > 25:
+        x_col = col_names[23]  # Column X
+        z_col = col_names[25]  # Column Z
+        st.sidebar.info(f"Using column X (index 23): {x_col} and column Z (index 25): {z_col}")
+    else:
+        st.sidebar.error(f"Sheet has only {len(col_names)} columns, need at least 26 columns")
         return sectors
-    
-    st.sidebar.success(f"Found X column: {x_col}, Z column: {z_col}")
     
     # Extract data from these columns
     for index, row in df.iterrows():
@@ -206,22 +201,35 @@ def extract_stock_data(data_dict):
         'bearish_stocks': []
     }
     
-    # Look for Nifty 50 Bullish Stock sheet
+    # Debug: Print all sheet names
+    st.sidebar.write("Available sheets for stocks:", list(data_dict.keys()))
+    
+    # Look for a sheet that contains 'NIFTY' and 'BULLISH' and 'STOCK' (case-insensitive)
     target_sheet = None
     for sheet_name in data_dict.keys():
-        if 'NIFTY 50 BULLISH STOCK' in sheet_name.upper():
+        if 'NIFTY' in sheet_name.upper() and 'BULLISH' in sheet_name.upper() and 'STOCK' in sheet_name.upper():
             target_sheet = sheet_name
             break
     
     if target_sheet is None:
         st.sidebar.warning("Nifty 50 Bullish Stock sheet not found")
+        # Try to find any sheet that might contain stock data
+        for sheet_name in data_dict.keys():
+            if 'STOCK' in sheet_name.upper() or 'BULLISH' in sheet_name.upper():
+                target_sheet = sheet_name
+                st.sidebar.warning(f"Found possible stock sheet: {sheet_name}")
+                break
+    
+    if target_sheet is None:
+        st.sidebar.error("No stock-related sheet found")
         return categories
     
     df = data_dict[target_sheet]
-    st.sidebar.info(f"Processing {target_sheet} sheet with {len(df)} rows")
+    st.sidebar.info(f"Processing sheet: {target_sheet} with {len(df)} rows")
     
     # Display column names for debugging
-    st.sidebar.write(f"Column names: {list(df.columns)}")
+    col_names = list(df.columns)
+    st.sidebar.write(f"Column names: {col_names}")
     
     # Process rows
     for index, row in df.iterrows():
@@ -473,10 +481,11 @@ def main():
         
         # Sample data option
         if st.sidebar.checkbox("🎯 Load Sample Data"):
+            # Create a sample Sector Dashboard with 4 sectors
             sample_data = {
                 'Sector Dashboard': pd.DataFrame({
-                    'Unnamed: 23': ['NSE:NIFTYNXT50', 'NSE:HDFCBANK', 'NSE:RBLBANK', 'NSE:YESBANK'],
-                    'Unnamed: 25': ['0.0%', '0.4%', '0.8%', '0.5%']
+                    'X': ['NSE:NIFTYNXT50', 'NSE:HDFCBANK', 'NSE:RBLBANK', 'NSE:YESBANK'],
+                    'Z': ['0.0%', '0.4%', '0.8%', '0.5%']
                 }),
                 'Nifty 50 Bullish Stock': pd.DataFrame({
                     'Stock Name': ['NSE:INFY', 'NSE:ASIANPAINT', 'NSE:HDFCBANK'],
