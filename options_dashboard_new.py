@@ -3,7 +3,9 @@ import streamlit as st
 import numpy as np
 from datetime import datetime
 import os
-st.set_page_config(page_title="F&O Trading Dashboard", page_icon="📊", layout="wide")
+
+st.set_page_config(page_title="Complete F&O Trading Dashboard", page_icon="📊", layout="wide")
+
 # Enhanced CSS for comprehensive display
 st.markdown("""
 <style>
@@ -14,14 +16,71 @@ st.markdown("""
     border-radius: 10px;
     text-align: center;
     margin-bottom: 2rem;
+    box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
 }
-.fo-section {
-    background: #f8f9fa;
-    border: 2px solid #007bff;
+
+.sector-performance {
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    color: white;
+    padding: 1rem;
+    border-radius: 8px;
+    margin: 0.5rem;
+    text-align: center;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+}
+
+.bullish-sector {
+    background: linear-gradient(135deg, #28a745, #20c997) !important;
+}
+
+.bearish-sector {
+    background: linear-gradient(135deg, #dc3545, #fd7e14) !important;
+}
+
+.stock-table {
+    background: white;
     border-radius: 10px;
-    padding: 1.5rem;
+    padding: 1rem;
     margin: 1rem 0;
+    box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
 }
+
+.long-buildup {
+    background: linear-gradient(135deg, #28a745, #20c997);
+    color: white;
+    padding: 0.5rem;
+    border-radius: 5px;
+    margin: 0.2rem 0;
+    font-size: 0.9rem;
+}
+
+.short-covering {
+    background: linear-gradient(135deg, #17a2b8, #6f42c1);
+    color: white;
+    padding: 0.5rem;
+    border-radius: 5px;
+    margin: 0.2rem 0;
+    font-size: 0.9rem;
+}
+
+.short-buildup {
+    background: linear-gradient(135deg, #dc3545, #fd7e14);
+    color: white;
+    padding: 0.5rem;
+    border-radius: 5px;
+    margin: 0.2rem 0;
+    font-size: 0.9rem;
+}
+
+.long-unwinding {
+    background: linear-gradient(135deg, #ffc107, #fd7e14);
+    color: white;
+    padding: 0.5rem;
+    border-radius: 5px;
+    margin: 0.2rem 0;
+    font-size: 0.9rem;
+}
+
 .bullish-stock {
     background: linear-gradient(135deg, #28a745, #20c997);
     color: white;
@@ -32,6 +91,7 @@ st.markdown("""
     justify-content: space-between;
     align-items: center;
 }
+
 .bearish-stock {
     background: linear-gradient(135deg, #dc3545, #fd7e14);
     color: white;
@@ -42,80 +102,49 @@ st.markdown("""
     justify-content: space-between;
     align-items: center;
 }
-.pcr-analysis {
-    background: linear-gradient(135deg, #6f42c1, #e83e8c);
-    color: white;
-    padding: 1.5rem;
-    border-radius: 10px;
-    margin: 1rem 0;
-    text-align: center;
-}
-.oi-analysis {
-    background: #fff3cd;
-    border: 1px solid #ffeaa7;
-    border-radius: 8px;
-    padding: 1rem;
-    margin: 0.5rem 0;
-}
-.unwinding-alert {
-    background: #f8d7da;
-    border: 1px solid #f5c6cb;
-    color: #721c24;
-    padding: 1rem;
-    border-radius: 8px;
-    margin: 0.5rem 0;
-}
-.buildup-alert {
-    background: #d4edda;
-    border: 1px solid #c3e6cb;
-    color: #155724;
-    padding: 1rem;
-    border-radius: 8px;
-    margin: 0.5rem 0;
-}
-.stock-grid {
-    display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
-    gap: 1rem;
-    margin: 1rem 0;
-}
-.action-card {
-    border-left: 5px solid;
-    padding: 1rem;
-    margin: 0.5rem 0;
-    border-radius: 5px;
-}
-.long-action {
-    background-color: rgba(40, 167, 69, 0.1);
-    border-left-color: #28a745;
-}
-.short-action {
-    background-color: rgba(220, 53, 69, 0.1);
-    border-left-color: #dc3545;
-}
-.index-card {
-    background: linear-gradient(135deg, #343a40, #495057);
-    color: white;
-    padding: 1.5rem;
-    border-radius: 10px;
-    margin: 1rem 0;
-}
-.debug-panel {
-    background-color: #f8f9fa;
-    border: 1px solid #dee2e6;
-    border-radius: 5px;
-    padding: 1rem;
-    margin-bottom: 1rem;
-}
+
 .live-indicator {
     animation: pulse 2s infinite;
     color: #28a745;
     font-weight: bold;
 }
+
 @keyframes pulse {
     0% { opacity: 1; }
     50% { opacity: 0.5; }
     100% { opacity: 1; }
+}
+
+.data-table {
+    background: white;
+    border-radius: 8px;
+    overflow: hidden;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+}
+
+.metric-card {
+    background: linear-gradient(135deg, #667eea, #764ba2);
+    color: white;
+    padding: 1.5rem;
+    border-radius: 10px;
+    text-align: center;
+    margin: 0.5rem;
+}
+
+.wait-signal {
+    background: linear-gradient(135deg, #6c757d, #495057);
+    color: white;
+    padding: 0.3rem 0.6rem;
+    border-radius: 4px;
+    font-size: 0.8rem;
+}
+
+.bullish-signal {
+    background: linear-gradient(135deg, #28a745, #20c997);
+    color: white;
+    padding: 0.3rem 0.6rem;
+    border-radius: 4px;
+    font-size: 0.8rem;
 }
 </style>
 """, unsafe_allow_html=True)
@@ -129,676 +158,395 @@ def find_column_by_keywords(columns, keywords):
                 return col
     return None
 
-@st.cache_data(ttl=30)  # Cache for 30 seconds for stable display
+@st.cache_data(ttl=30)  # Cache for 30 seconds for auto-refresh
 def read_comprehensive_data(file_path):
-    """Read all relevant sheets for F&O analysis - Silent loading"""
+    """Read all relevant sheets for F&O analysis"""
     try:
         excel_file = pd.ExcelFile(file_path)
         data_dict = {}
         
-        # Read all available sheets silently
+        # Read all available sheets
         for sheet_name in excel_file.sheet_names:
             try:
                 df = pd.read_excel(file_path, sheet_name=sheet_name)
                 if not df.empty:
                     data_dict[sheet_name] = df
-            except:
+            except Exception as e:
+                st.write(f"Error reading sheet {sheet_name}: {str(e)}")
                 continue
         
         return data_dict
-    except:
+    except Exception as e:
+        st.error(f"Error reading Excel file: {str(e)}")
         return {}
 
-def extract_fo_bullish_bearish_stocks(data_dict):
-    """Extract detailed F&O bullish and bearish stocks with trading actions"""
-    fo_stocks = {'bullish': [], 'bearish': [], 'trading_actions': []}
+def extract_sector_performance(data_dict):
+    """Extract sector-wise performance data"""
+    sector_data = {}
     
-    # Look for F&O specific sheets or columns
     for sheet_name, df in data_dict.items():
-        if any(term in sheet_name.upper() for term in ['STOCK', 'DASHBOARD', 'F&O', 'DATA']):
+        if 'SECTOR' in sheet_name.upper() or 'Dashboard' in sheet_name:
+            # Look for sector performance data
+            for _, row in df.iterrows():
+                try:
+                    sector_name = str(row.iloc[0]).strip()
+                    if any(sector in sector_name.upper() for sector in ['NIFTY', 'BANK', 'IT', 'PHARMA', 'METAL', 'AUTO', 'ENERGY', 'FMCG']):
+                        # Extract bullish/bearish percentages
+                        for col in df.columns:
+                            if 'BULLISH' in str(col).upper():
+                                bullish_val = pd.to_numeric(row[col], errors='coerce')
+                                if not pd.isna(bullish_val):
+                                    sector_data[sector_name] = {
+                                        'bullish': bullish_val,
+                                        'bearish': 100 - bullish_val if bullish_val <= 100 else 0
+                                    }
+                                break
+                except:
+                    continue
+    
+    return sector_data
+
+def extract_complete_stock_data(data_dict):
+    """Extract complete stock data with all buildup types"""
+    stock_data = {
+        'long_buildup': [],
+        'short_covering': [],
+        'short_buildup': [],
+        'long_unwinding': [],
+        'bullish_stocks': [],
+        'bearish_stocks': [],
+        'all_stocks': []
+    }
+    
+    for sheet_name, df in data_dict.items():
+        if any(term in sheet_name.upper() for term in ['STOCK', 'NIFTY 50', 'DASHBOARD']):
             try:
-                # Find relevant columns with more flexible matching
-                symbol_col = find_column_by_keywords(df.columns, ['SYMBOL', 'STOCK', 'NAME', 'SCRIP'])
-                change_col = find_column_by_keywords(df.columns, ['CHANGE', '%', 'CHG'])
-                ltp_col = find_column_by_keywords(df.columns, ['LTP', 'PRICE', 'CLOSE', 'LAST'])
+                # Find relevant columns
+                symbol_col = find_column_by_keywords(df.columns, ['STOCK NAME', 'SYMBOL', 'NAME'])
+                change_col = find_column_by_keywords(df.columns, ['CHANGE %', '%', 'CHG'])
+                price_col = find_column_by_keywords(df.columns, ['PRICE', 'LTP', 'CLOSE'])
                 oi_col = find_column_by_keywords(df.columns, ['OI', 'OPEN INT'])
-                volume_col = find_column_by_keywords(df.columns, ['VOLUME', 'VOL'])
-                buildup_col = find_column_by_keywords(df.columns, ['BUILDUP', 'TREND'])
+                oi_change_col = find_column_by_keywords(df.columns, ['Change in OI', 'OI CHG'])
+                volume_col = find_column_by_keywords(df.columns, ['Volume', 'VOL'])
+                buildup_col = find_column_by_keywords(df.columns, ['Buildup', 'BUILDUP', 'TREND'])
+                sentiment_col = find_column_by_keywords(df.columns, ['SENTIMENT', 'SIGNAL'])
                 
-                if not symbol_col or not change_col:
+                if not symbol_col:
                     continue
                 
                 # Process each stock
                 for _, row in df.iterrows():
                     try:
                         symbol = str(row[symbol_col]).strip()
-                        change = pd.to_numeric(row[change_col], errors='coerce')
-                        
-                        if pd.isna(change) or symbol == 'nan' or symbol == '':
+                        if symbol == 'nan' or symbol == '' or 'NSE:' not in symbol:
                             continue
                         
-                        # Get other values if available
-                        ltp = pd.to_numeric(row[ltp_col], errors='coerce') if ltp_col else 0
+                        # Clean symbol name
+                        symbol = symbol.replace('NSE:', '')
+                        
+                        # Extract all data
+                        change = pd.to_numeric(row[change_col], errors='coerce') if change_col else 0
+                        price = pd.to_numeric(row[price_col], errors='coerce') if price_col else 0
                         oi = pd.to_numeric(row[oi_col], errors='coerce') if oi_col else 0
+                        oi_change = pd.to_numeric(row[oi_change_col], errors='coerce') if oi_change_col else 0
                         volume = pd.to_numeric(row[volume_col], errors='coerce') if volume_col else 0
                         buildup = str(row[buildup_col]).strip() if buildup_col else 'Unknown'
+                        sentiment = str(row[sentiment_col]).strip() if sentiment_col else 'Wait For Signal'
                         
-                        stock_data = {
+                        if pd.isna(change):
+                            continue
+                        
+                        stock_info = {
                             'symbol': symbol,
                             'change': change,
-                            'ltp': ltp,
+                            'price': price,
                             'oi': oi,
+                            'oi_change': oi_change,
                             'volume': volume,
-                            'buildup': buildup
+                            'buildup': buildup,
+                            'sentiment': sentiment
                         }
                         
-                        # Classify as bullish or bearish
-                        if change > 1:  # 1% threshold for bullish
-                            fo_stocks['bullish'].append(stock_data)
-                            
-                            # Generate trading action for bullish stocks
-                            action = {
-                                'symbol': symbol,
-                                'action': 'LONG',
-                                'ltp': ltp,
-                                'target': ltp * 1.05 if ltp > 0 else 0,
-                                'stop_loss': ltp * 0.97 if ltp > 0 else 0,
-                                'confidence': 'HIGH' if change > 3 else 'MEDIUM',
-                                'reason': f"Bullish momentum (+{change:.2f}%) with {buildup} buildup"
-                            }
-                            fo_stocks['trading_actions'].append(action)
-                            
-                        elif change < -1:  # -1% threshold for bearish
-                            fo_stocks['bearish'].append(stock_data)
-                            
-                            # Generate trading action for bearish stocks
-                            action = {
-                                'symbol': symbol,
-                                'action': 'SHORT',
-                                'ltp': ltp,
-                                'target': ltp * 0.95 if ltp > 0 else 0,
-                                'stop_loss': ltp * 1.03 if ltp > 0 else 0,
-                                'confidence': 'HIGH' if change < -3 else 'MEDIUM',
-                                'reason': f"Bearish momentum ({change:.2f}%) with {buildup} buildup"
-                            }
-                            fo_stocks['trading_actions'].append(action)
+                        # Add to all stocks
+                        stock_data['all_stocks'].append(stock_info)
+                        
+                        # Categorize by buildup type
+                        if 'longBuildup' in buildup or 'Long Buildup' in buildup:
+                            stock_data['long_buildup'].append(stock_info)
+                        elif 'shortCover' in buildup or 'Short Cover' in buildup:
+                            stock_data['short_covering'].append(stock_info)
+                        elif 'shortBuildup' in buildup or 'Short Buildup' in buildup:
+                            stock_data['short_buildup'].append(stock_info)
+                        elif 'longUnwind' in buildup or 'Long Unwind' in buildup:
+                            stock_data['long_unwinding'].append(stock_info)
+                        
+                        # Categorize by performance
+                        if change > 0.5:
+                            stock_data['bullish_stocks'].append(stock_info)
+                        elif change < -0.5:
+                            stock_data['bearish_stocks'].append(stock_info)
                     
-                    except:
+                    except Exception as e:
                         continue
             
-            except:
+            except Exception as e:
+                st.write(f"Error processing sheet {sheet_name}: {str(e)}")
                 continue
     
-    # Sort by change percentage
-    fo_stocks['bullish'] = sorted(fo_stocks['bullish'], key=lambda x: x['change'], reverse=True)[:50]
-    fo_stocks['bearish'] = sorted(fo_stocks['bearish'], key=lambda x: x['change'])[:50]
-    
-    # Sort trading actions by confidence and change magnitude
-    fo_stocks['trading_actions'] = sorted(
-        fo_stocks['trading_actions'], 
-        key=lambda x: (x['confidence'] == 'HIGH', abs(x['ltp'] - (x['target'] if x['action'] == 'LONG' else x['stop_loss']))), 
-        reverse=True
-    )[:20]
-    
-    return fo_stocks
-
-def extract_comprehensive_pcr_data(data_dict):
-    """Extract PCR data based on actual data structure"""
-    pcr_data = {}
-    
-    # Look for sheets with options data
-    for sheet_name, df in data_dict.items():
-        try:
-            # Check if this sheet has the expected structure from your images
-            if any(col in df.columns for col in ['SP', 'NET COI', 'NET OI', 'COI PCR', 'OI PCR']):
-                # Extract NIFTY PCR if available
-                nifty_rows = df[df.iloc[:, 0].astype(str).str.contains('NIFTY', na=False)]
-                if not nifty_rows.empty:
-                    row = nifty_rows.iloc[0]
-                    if 'COI PCR' in df.columns:
-                        coi_pcr = pd.to_numeric(row['COI PCR'], errors='coerce')
-                        if not pd.isna(coi_pcr):
-                            pcr_data['NIFTY_COI_PCR'] = {
-                                'value': coi_pcr,
-                                'interpretation': get_pcr_interpretation(coi_pcr)
-                            }
-                    
-                    if 'OI PCR' in df.columns:
-                        oi_pcr = pd.to_numeric(row['OI PCR'], errors='coerce')
-                        if not pd.isna(oi_pcr):
-                            pcr_data['NIFTY_OI_PCR'] = {
-                                'value': oi_pcr,
-                                'interpretation': get_pcr_interpretation(oi_pcr)
-                            }
-                
-                # Extract BANKNIFTY PCR if available
-                bnf_rows = df[df.iloc[:, 0].astype(str).str.contains('BANKNIFTY', na=False)]
-                if not bnf_rows.empty:
-                    row = bnf_rows.iloc[0]
-                    if 'COI PCR' in df.columns:
-                        coi_pcr = pd.to_numeric(row['COI PCR'], errors='coerce')
-                        if not pd.isna(coi_pcr):
-                            pcr_data['BANKNIFTY_COI_PCR'] = {
-                                'value': coi_pcr,
-                                'interpretation': get_pcr_interpretation(coi_pcr)
-                            }
-                    
-                    if 'OI PCR' in df.columns:
-                        oi_pcr = pd.to_numeric(row['OI PCR'], errors='coerce')
-                        if not pd.isna(oi_pcr):
-                            pcr_data['BANKNIFTY_OI_PCR'] = {
-                                'value': oi_pcr,
-                                'interpretation': get_pcr_interpretation(oi_pcr)
-                            }
-            
-            # Also look for individual PCR columns in other sheets
-            for col in df.columns:
-                col_str = str(col).upper()
-                if 'PCR' in col_str:
-                    pcr_values = pd.to_numeric(df[col], errors='coerce').dropna()
-                    if not pcr_values.empty:
-                        current_pcr = pcr_values.iloc[-1]
-                        pcr_data[f'{sheet_name}_{col}'] = {
-                            'value': current_pcr,
-                            'interpretation': get_pcr_interpretation(current_pcr)
-                        }
-                        
-        except Exception as e:
-            continue
-    
-    return pcr_data
-
-def get_pcr_interpretation(pcr_value):
-    """Interpret PCR values"""
-    if pcr_value > 1.5:
-        return {'signal': 'STRONG_BEARISH', 'action': 'Consider PUT buying', 'confidence': 'HIGH'}
-    elif pcr_value > 1.2:
-        return {'signal': 'BEARISH', 'action': 'Bearish bias', 'confidence': 'MEDIUM'}
-    elif pcr_value < 0.6:
-        return {'signal': 'STRONG_BULLISH', 'action': 'Consider CALL buying', 'confidence': 'HIGH'}
-    elif pcr_value < 0.8:
-        return {'signal': 'BULLISH', 'action': 'Bullish bias', 'confidence': 'MEDIUM'}
-    else:
-        return {'signal': 'NEUTRAL', 'action': 'Range-bound', 'confidence': 'LOW'}
-
-def extract_high_oi_analysis(data_dict):
-    """Extract high OI strikes and generate option strategies based on actual data structure"""
-    high_oi_data = {'nifty': {}, 'banknifty': {}, 'strategies': []}
-    
-    for sheet_name, df in data_dict.items():
-        try:
-            # Check if this sheet has options data structure like in your images
-            if 'Strike Price' in df.columns or any(col in df.columns for col in ['SP', 'NET COI', 'NET OI']):
-                
-                # Determine index type from the sheet or data
-                index_type = 'nifty'
-                if 'BANKNIFTY' in sheet_name.upper() or any('BANKNIFTY' in str(cell) for cell in df.values.flatten() if pd.notna(cell)):
-                    index_type = 'banknifty'
-                
-                # Look for strike-wise data
-                strike_data = []
-                
-                for _, row in df.iterrows():
-                    try:
-                        # Try to find strike price
-                        strike = None
-                        if 'Strike Price' in df.columns:
-                            strike = pd.to_numeric(row['Strike Price'], errors='coerce')
-                        elif 'SP' in df.columns:
-                            strike = pd.to_numeric(row['SP'], errors='coerce')
-                        
-                        if pd.isna(strike):
-                            continue
-                        
-                        # Get OI data
-                        call_oi = 0
-                        put_oi = 0
-                        
-                        if 'NET COI' in df.columns:
-                            call_oi = pd.to_numeric(row['NET COI'], errors='coerce') or 0
-                        if 'NET OI' in df.columns:
-                            put_oi = pd.to_numeric(row['NET OI'], errors='coerce') or 0
-                        
-                        # Get PCR data
-                        coi_pcr = pd.to_numeric(row.get('COI PCR', 0), errors='coerce') or 0
-                        oi_pcr = pd.to_numeric(row.get('OI PCR', 0), errors='coerce') or 0
-                        
-                        strike_data.append({
-                            'strike': strike,
-                            'call_oi': abs(call_oi),  # Use absolute value
-                            'put_oi': abs(put_oi),    # Use absolute value
-                            'coi_pcr': coi_pcr,
-                            'oi_pcr': oi_pcr
-                        })
-                        
-                    except:
-                        continue
-                
-                if strike_data:
-                    # Sort by OI to find highest
-                    max_call_oi_strike = max(strike_data, key=lambda x: x['call_oi'])
-                    max_put_oi_strike = max(strike_data, key=lambda x: x['put_oi'])
-                    
-                    # Calculate total PCR
-                    total_call_oi = sum(s['call_oi'] for s in strike_data)
-                    total_put_oi = sum(s['put_oi'] for s in strike_data)
-                    pcr = total_put_oi / total_call_oi if total_call_oi > 0 else 0
-                    
-                    # Store analysis
-                    high_oi_data[index_type] = {
-                        'max_call_strike': max_call_oi_strike['strike'],
-                        'max_call_oi': max_call_oi_strike['call_oi'],
-                        'max_put_strike': max_put_oi_strike['strike'],
-                        'max_put_oi': max_put_oi_strike['put_oi'],
-                        'pcr': pcr,
-                        'total_call_oi': total_call_oi,
-                        'total_put_oi': total_put_oi
-                    }
-                    
-                    # Generate strategies - SAFE VERSION
-                    try:
-                        call_strike_str = str(int(max_call_oi_strike['strike']))
-                        call_oi_str = f"{max_call_oi_strike['call_oi']:,.0f}"
-                        
-                        high_oi_data['strategies'].append({
-                            'index': index_type.upper(),
-                            'strategy': 'SELL CALL',
-                            'strike': call_strike_str,
-                            'premium': 'Market Price',
-                            'oi_text': f"Call OI: {call_oi_str}",
-                            'reason': f'Maximum Call OI at {call_strike_str} - Strong Resistance',
-                            'risk': 'UNLIMITED',
-                            'reward': 'PREMIUM RECEIVED'
-                        })
-                    except:
-                        pass
-                    
-                    try:
-                        put_strike_str = str(int(max_put_oi_strike['strike']))
-                        put_oi_str = f"{max_put_oi_strike['put_oi']:,.0f}"
-                        
-                        high_oi_data['strategies'].append({
-                            'index': index_type.upper(),
-                            'strategy': 'SELL PUT',
-                            'strike': put_strike_str,
-                            'premium': 'Market Price',
-                            'oi_text': f"Put OI: {put_oi_str}",
-                            'reason': f'Maximum Put OI at {put_strike_str} - Strong Support',
-                            'risk': 'UNLIMITED',
-                            'reward': 'PREMIUM RECEIVED'
-                        })
-                    except:
-                        pass
-                    
-                    # PCR-based strategies
-                    try:
-                        pcr_str = f"{pcr:.3f}"
-                        if pcr > 1.3:  # Bearish
-                            high_oi_data['strategies'].append({
-                                'index': index_type.upper(),
-                                'strategy': 'BUY PUT',
-                                'strike': 'ATM',
-                                'premium': 'Market Price',
-                                'oi_text': f'PCR: {pcr_str} (Bearish)',
-                                'reason': 'High PCR indicates bearish sentiment',
-                                'risk': 'PREMIUM PAID',
-                                'reward': 'UNLIMITED DOWNSIDE'
-                            })
-                        elif pcr < 0.7:  # Bullish
-                            high_oi_data['strategies'].append({
-                                'index': index_type.upper(),
-                                'strategy': 'BUY CALL',
-                                'strike': 'ATM',
-                                'premium': 'Market Price',
-                                'oi_text': f'PCR: {pcr_str} (Bullish)',
-                                'reason': 'Low PCR indicates bullish sentiment',
-                                'risk': 'PREMIUM PAID',
-                                'reward': 'UNLIMITED UPSIDE'
-                            })
-                    except:
-                        pass
-                        
-        except:
-            continue
-    
-    return high_oi_data
-
-def detect_options_unwinding(data_dict):
-    """Detect call and put unwinding patterns"""
-    unwinding_data = {'call_unwinding': [], 'put_unwinding': [], 'fresh_positions': []}
-    
-    for sheet_name, df in data_dict.items():
-        if 'OC_' in sheet_name or 'OPTIONS' in sheet_name.upper() or 'NIFTY' in sheet_name.upper() or 'BANKNIFTY' in sheet_name.upper():
-            try:
-                # Look for OI change columns
-                strike_col = find_column_by_keywords(df.columns, ['STRIKE'])
-                call_oi_change_col = find_column_by_keywords(df.columns, ['CE', 'CALL', 'CHANGE', 'OI'])
-                put_oi_change_col = find_column_by_keywords(df.columns, ['PE', 'PUT', 'CHANGE', 'OI'])
-                call_price_col = find_column_by_keywords(df.columns, ['CE', 'CALL', 'LTP', 'PRICE'])
-                put_price_col = find_column_by_keywords(df.columns, ['PE', 'PUT', 'LTP', 'PRICE'])
-                
-                if not strike_col:
-                    continue
-                
-                # Process each row
-                for _, row in df.iterrows():
-                    try:
-                        strike = pd.to_numeric(row[strike_col], errors='coerce')
-                        if pd.isna(strike):
-                            continue
-                        
-                        # Check for call unwinding
-                        if call_oi_change_col and call_price_col:
-                            call_oi_change = pd.to_numeric(row[call_oi_change_col], errors='coerce')
-                            call_price = pd.to_numeric(row[call_price_col], errors='coerce')
-                            
-                            if not pd.isna(call_oi_change) and not pd.isna(call_price):
-                                if call_oi_change < -10000 and call_price > 0:
-                                    unwinding_data['call_unwinding'].append({
-                                        'strike': strike,
-                                        'oi_change': call_oi_change,
-                                        'price': call_price,
-                                        'sheet': sheet_name
-                                    })
-                                
-                                if call_oi_change > 50000:
-                                    unwinding_data['fresh_positions'].append({
-                                        'type': 'CALL',
-                                        'strike': strike,
-                                        'oi_change': call_oi_change,
-                                        'sheet': sheet_name
-                                    })
-                        
-                        # Check for put unwinding
-                        if put_oi_change_col and put_price_col:
-                            put_oi_change = pd.to_numeric(row[put_oi_change_col], errors='coerce')
-                            put_price = pd.to_numeric(row[put_price_col], errors='coerce')
-                            
-                            if not pd.isna(put_oi_change) and not pd.isna(put_price):
-                                if put_oi_change < -10000 and put_price > 0:
-                                    unwinding_data['put_unwinding'].append({
-                                        'strike': strike,
-                                        'oi_change': put_oi_change,
-                                        'price': put_price,
-                                        'sheet': sheet_name
-                                    })
-                                
-                                if put_oi_change > 50000:
-                                    unwinding_data['fresh_positions'].append({
-                                        'type': 'PUT',
-                                        'strike': strike,
-                                        'oi_change': put_oi_change,
-                                        'sheet': sheet_name
-                                    })
-                    
-                    except:
-                        continue
-            
-            except:
-                continue
-    
-    # Sort by magnitude of change
-    for key in unwinding_data:
-        if key != 'fresh_positions':
-            unwinding_data[key] = sorted(unwinding_data[key], key=lambda x: abs(x['oi_change']), reverse=True)[:10]
+    # Sort all categories
+    for category in stock_data:
+        if category == 'bearish_stocks':
+            stock_data[category] = sorted(stock_data[category], key=lambda x: x['change'])[:50]
         else:
-            unwinding_data[key] = sorted(unwinding_data[key], key=lambda x: x['oi_change'], reverse=True)[:10]
+            stock_data[category] = sorted(stock_data[category], key=lambda x: x['change'], reverse=True)[:50]
     
-    return unwinding_data
+    return stock_data
 
-def get_index_interpretation(pcr, spot_price, resistance_strike, support_strike):
-    """Interpret index options data"""
-    interpretation = {
-        'signal': 'NEUTRAL',
-        'action': 'Range-bound expected',
-        'confidence': 'LOW'
-    }
+def display_sector_performance(sector_data):
+    """Display sector performance grid"""
+    if not sector_data:
+        return
     
-    if pcr > 1.5:
-        interpretation['signal'] = 'BEARISH'
-        interpretation['action'] = 'Consider PUT positions'
-        interpretation['confidence'] = 'HIGH'
-    elif pcr < 0.6:
-        interpretation['signal'] = 'BULLISH'
-        interpretation['action'] = 'Consider CALL positions'
-        interpretation['confidence'] = 'HIGH'
-    elif pcr > 1.2:
-        interpretation['signal'] = 'WEAKLY_BEARISH'
-        interpretation['confidence'] = 'MEDIUM'
-    elif pcr < 0.8:
-        interpretation['signal'] = 'WEAKLY_BULLISH'
-        interpretation['confidence'] = 'MEDIUM'
+    st.header("📊 All Sector Performance")
     
-    return interpretation
+    # Create grid layout for sectors
+    cols = st.columns(4)
+    col_idx = 0
+    
+    for sector_name, data in sector_data.items():
+        with cols[col_idx % 4]:
+            sector_class = "bullish-sector" if data['bullish'] > 60 else "bearish-sector" if data['bullish'] < 40 else ""
+            
+            st.markdown(f"""
+            <div class="sector-performance {sector_class}">
+                <h4>{sector_name}</h4>
+                <div style="display: flex; justify-content: space-between;">
+                    <div>
+                        <strong>BULLISH</strong><br>
+                        <span style="font-size: 1.2em;">{data['bullish']:.1f}%</span>
+                    </div>
+                    <div>
+                        <strong>BEARISH</strong><br>
+                        <span style="font-size: 1.2em;">{data['bearish']:.1f}%</span>
+                    </div>
+                </div>
+            </div>
+            """, unsafe_allow_html=True)
+        
+        col_idx += 1
+
+def display_stock_analysis_table(stock_data, category, title, css_class):
+    """Display stock data in a formatted table"""
+    if not stock_data[category]:
+        return
+    
+    st.subheader(title)
+    
+    # Create DataFrame for better display
+    df_display = pd.DataFrame(stock_data[category])
+    
+    # Format the data for display
+    df_display['Change %'] = df_display['change'].apply(lambda x: f"{x:+.2f}%")
+    df_display['Price'] = df_display['price'].apply(lambda x: f"₹{x:.2f}" if x > 0 else "N/A")
+    df_display['OI'] = df_display['oi'].apply(lambda x: f"{x:,.0f}" if x > 0 else "N/A")
+    df_display['Volume'] = df_display['volume'].apply(lambda x: f"{x:,.0f}" if x > 0 else "N/A")
+    df_display['OI Change %'] = df_display['oi_change'].apply(lambda x: f"{x:+.2f}%" if not pd.isna(x) and x != 0 else "N/A")
+    
+    # Select columns for display
+    display_cols = ['symbol', 'Change %', 'Price', 'OI', 'OI Change %', 'Volume', 'buildup', 'sentiment']
+    df_show = df_display[display_cols]
+    df_show.columns = ['Stock', 'Change %', 'Price', 'OI', 'OI Change %', 'Volume', 'Buildup', 'Sentiment']
+    
+    # Display in chunks of 10
+    for i in range(0, min(30, len(df_show)), 10):
+        chunk = df_show.iloc[i:i+10]
+        
+        # Create HTML table for better formatting
+        table_html = f"""
+        <div class="data-table">
+            <table style="width: 100%; border-collapse: collapse;">
+                <thead style="background: #f8f9fa;">
+                    <tr>
+                        <th style="padding: 10px; text-align: left; border-bottom: 2px solid #dee2e6;">Stock</th>
+                        <th style="padding: 10px; text-align: center; border-bottom: 2px solid #dee2e6;">Change %</th>
+                        <th style="padding: 10px; text-align: center; border-bottom: 2px solid #dee2e6;">Price</th>
+                        <th style="padding: 10px; text-align: center; border-bottom: 2px solid #dee2e6;">OI</th>
+                        <th style="padding: 10px; text-align: center; border-bottom: 2px solid #dee2e6;">OI Change %</th>
+                        <th style="padding: 10px; text-align: center; border-bottom: 2px solid #dee2e6;">Volume</th>
+                        <th style="padding: 10px; text-align: center; border-bottom: 2px solid #dee2e6;">Buildup</th>
+                        <th style="padding: 10px; text-align: center; border-bottom: 2px solid #dee2e6;">Sentiment</th>
+                    </tr>
+                </thead>
+                <tbody>
+        """
+        
+        for _, row in chunk.iterrows():
+            # Determine row color based on change
+            row_style = ""
+            if category in ['long_buildup', 'bullish_stocks']:
+                row_style = "background-color: rgba(40, 167, 69, 0.1);"
+            elif category in ['short_covering']:
+                row_style = "background-color: rgba(23, 162, 184, 0.1);"
+            elif category in ['short_buildup', 'bearish_stocks']:
+                row_style = "background-color: rgba(220, 53, 69, 0.1);"
+            elif category in ['long_unwinding']:
+                row_style = "background-color: rgba(255, 193, 7, 0.1);"
+            
+            sentiment_class = "bullish-signal" if "Bullish" in str(row['Sentiment']) else "wait-signal"
+            
+            table_html += f"""
+                <tr style="{row_style}">
+                    <td style="padding: 8px; border-bottom: 1px solid #dee2e6;"><strong>{row['Stock']}</strong></td>
+                    <td style="padding: 8px; text-align: center; border-bottom: 1px solid #dee2e6;"><strong>{row['Change %']}</strong></td>
+                    <td style="padding: 8px; text-align: center; border-bottom: 1px solid #dee2e6;">{row['Price']}</td>
+                    <td style="padding: 8px; text-align: center; border-bottom: 1px solid #dee2e6;">{row['OI']}</td>
+                    <td style="padding: 8px; text-align: center; border-bottom: 1px solid #dee2e6;">{row['OI Change %']}</td>
+                    <td style="padding: 8px; text-align: center; border-bottom: 1px solid #dee2e6;">{row['Volume']}</td>
+                    <td style="padding: 8px; text-align: center; border-bottom: 1px solid #dee2e6;"><span class="{css_class}">{row['Buildup']}</span></td>
+                    <td style="padding: 8px; text-align: center; border-bottom: 1px solid #dee2e6;"><span class="{sentiment_class}">{row['Sentiment']}</span></td>
+                </tr>
+            """
+        
+        table_html += """
+                </tbody>
+            </table>
+        </div>
+        """
+        
+        st.markdown(table_html, unsafe_allow_html=True)
+
+def display_summary_metrics(stock_data):
+    """Display summary metrics"""
+    st.header("📈 Market Summary")
+    
+    cols = st.columns(6)
+    
+    metrics = [
+        ("Long Buildup", len(stock_data['long_buildup']), "#28a745"),
+        ("Short Covering", len(stock_data['short_covering']), "#17a2b8"),
+        ("Short Buildup", len(stock_data['short_buildup']), "#dc3545"),
+        ("Long Unwinding", len(stock_data['long_unwinding']), "#ffc107"),
+        ("Bullish Stocks", len(stock_data['bullish_stocks']), "#28a745"),
+        ("Bearish Stocks", len(stock_data['bearish_stocks']), "#dc3545")
+    ]
+    
+    for i, (label, count, color) in enumerate(metrics):
+        with cols[i]:
+            st.markdown(f"""
+            <div class="metric-card" style="background: linear-gradient(135deg, {color}, #495057);">
+                <h3>{count}</h3>
+                <p>{label}</p>
+            </div>
+            """, unsafe_allow_html=True)
 
 def display_live_dashboard(data_dict):
-    """Display live F&O dashboard with auto-refresh"""
+    """Display complete live F&O dashboard"""
     
     # Live header
     st.markdown(f"""
     <div class="dashboard-header">
-        <h1>📊 LIVE F&O Trading Dashboard</h1>
-        <p class="live-indicator">● LIVE</p>
-        <p>Real-time Analysis - {datetime.now().strftime("%H:%M:%S")}</p>
+        <h1>📊 Complete F&O Trading Dashboard</h1>
+        <p class="live-indicator">● LIVE DATA</p>
+        <p>Real-time Analysis - {datetime.now().strftime("%d %B %Y, %H:%M:%S")}</p>
     </div>
     """, unsafe_allow_html=True)
     
-    # Extract all data
-    fo_stocks = extract_fo_bullish_bearish_stocks(data_dict)
-    pcr_data = extract_comprehensive_pcr_data(data_dict)
-    unwinding_data = detect_options_unwinding(data_dict)
-    high_oi_data = extract_high_oi_analysis(data_dict)
+    # Extract data
+    sector_data = extract_sector_performance(data_dict)
+    stock_data = extract_complete_stock_data(data_dict)
     
-    # PCR Analysis Section - Prominently displayed
-    st.header("📊 PCR & Market Sentiment")
+    # Display sector performance
+    display_sector_performance(sector_data)
     
-    pcr_items = [k for k in pcr_data.keys() if k != 'oi_analysis']
+    # Display summary metrics
+    display_summary_metrics(stock_data)
     
-    if pcr_items:
-        pcr_cols = st.columns(min(4, len(pcr_items)))
-        for i, pcr_name in enumerate(pcr_items[:4]):
-            pcr_info = pcr_data[pcr_name]
-            interpretation = pcr_info['interpretation']
-            
-            with pcr_cols[i]:
-                signal_color = "#dc3545" if "BEARISH" in interpretation['signal'] else "#28a745" if "BULLISH" in interpretation['signal'] else "#6c757d"
-                st.markdown(f"""
-                <div class="pcr-analysis" style="background: linear-gradient(135deg, {signal_color}, #495057);">
-                    <h4>{pcr_name.replace('_', ' ')}</h4>
-                    <h2>{pcr_info['value']:.3f}</h2>
-                    <p><strong>{interpretation['signal']}</strong></p>
-                    <p>{interpretation['action']}</p>
-                    <small>Confidence: {interpretation['confidence']}</small>
-                </div>
-                """, unsafe_allow_html=True)
+    # Display stock analysis by categories
+    st.header("🎯 Detailed Stock Analysis")
     
-    # High OI Analysis & Option Strategies
-    st.header("Option Strategies Based on High OI")
+    # Create tabs for different categories
+    tabs = st.tabs(["Long Buildup", "Short Covering", "Short Buildup", "Long Unwinding", "All Bullish", "All Bearish"])
     
-    if high_oi_data['strategies']:
-        # Show strategies in cards similar to your layout
-        for strategy in high_oi_data['strategies'][:6]:
-            strategy_color = "#28a745" if "BUY" in strategy['strategy'] else "#dc3545" if "SELL" in strategy['strategy'] else "#6f42c1"
-            st.markdown(f"""
-            <div class="action-card" style="border-left-color: {strategy_color}; background-color: rgba(111, 66, 193, 0.1);">
-                <strong>{strategy['index']} - {strategy['strategy']}</strong><br>
-                Strike: {strategy['strike']} | Premium: {strategy['premium']}<br>
-                {strategy['oi_text']}<br>
-                <small>{strategy['reason']}</small><br>
-                <small>Risk: {strategy['risk']} | Reward: {strategy['reward']}</small>
-            </div>
-            """, unsafe_allow_html=True)
+    with tabs[0]:
+        display_stock_analysis_table(stock_data, 'long_buildup', "🟢 Long Buildup Stocks", "long-buildup")
     
-    # High OI Levels Display in tabular format like your images
-    if high_oi_data['nifty'] or high_oi_data['banknifty']:
-        st.subheader("High OI Analysis")
-        
-        oi_cols = st.columns(2)
-        
-        with oi_cols[0]:
-            if high_oi_data['nifty']:
-                nifty_oi = high_oi_data['nifty']
-                st.markdown(f"""
-                <div class="index-card">
-                    <h3>NIFTY Options Analysis</h3>
-                    <table style="width:100%; color:white;">
-                    <tr><td>Max Call OI Strike:</td><td><strong>{nifty_oi['max_call_strike']:.0f}</strong></td></tr>
-                    <tr><td>Max Call OI:</td><td>{nifty_oi['max_call_oi']:,.0f}</td></tr>
-                    <tr><td>Max Put OI Strike:</td><td><strong>{nifty_oi['max_put_strike']:.0f}</strong></td></tr>
-                    <tr><td>Max Put OI:</td><td>{nifty_oi['max_put_oi']:,.0f}</td></tr>
-                    <tr><td>PCR:</td><td>{nifty_oi['pcr']:.3f}</td></tr>
-                    </table>
-                </div>
-                """, unsafe_allow_html=True)
-        
-        with oi_cols[1]:
-            if high_oi_data['banknifty']:
-                bnf_oi = high_oi_data['banknifty']
-                st.markdown(f"""
-                <div class="index-card">
-                    <h3>BANKNIFTY Options Analysis</h3>
-                    <table style="width:100%; color:white;">
-                    <tr><td>Max Call OI Strike:</td><td><strong>{bnf_oi['max_call_strike']:.0f}</strong></td></tr>
-                    <tr><td>Max Call OI:</td><td>{bnf_oi['max_call_oi']:,.0f}</td></tr>
-                    <tr><td>Max Put OI Strike:</td><td><strong>{bnf_oi['max_put_strike']:.0f}</strong></td></tr>
-                    <tr><td>Max Put OI:</td><td>{bnf_oi['max_put_oi']:,.0f}</td></tr>
-                    <tr><td>PCR:</td><td>{bnf_oi['pcr']:.3f}</td></tr>
-                    </table>
-                </div>
-                """, unsafe_allow_html=True)
+    with tabs[1]:
+        display_stock_analysis_table(stock_data, 'short_covering', "🔵 Short Covering Stocks", "short-covering")
     
-    # F&O Bullish/Bearish Stocks Section
-    st.header("📈 F&O Stock Analysis")
+    with tabs[2]:
+        display_stock_analysis_table(stock_data, 'short_buildup', "🔴 Short Buildup Stocks", "short-buildup")
     
-    # Display bullish stocks
-    if fo_stocks['bullish']:
-        st.subheader("🟢 Bullish Stocks")
-        bullish_cols = st.columns(3)
-        for i, stock in enumerate(fo_stocks['bullish'][:9]):
-            with bullish_cols[i % 3]:
-                st.markdown(f"""
-                <div class="bullish-stock">
-                    <div>
-                        <strong>{stock['symbol']}</strong><br>
-                        <small>LTP: {stock['ltp']:.2f}</small>
-                    </div>
-                    <div>
-                        <strong>+{stock['change']:.2f}%</strong><br>
-                        <small>OI: {stock['oi']:,.0f}</small>
-                    </div>
-                </div>
-                """, unsafe_allow_html=True)
+    with tabs[3]:
+        display_stock_analysis_table(stock_data, 'long_unwinding', "🟡 Long Unwinding Stocks", "long-unwinding")
     
-    # Display bearish stocks
-    if fo_stocks['bearish']:
-        st.subheader("🔴 Bearish Stocks")
-        bearish_cols = st.columns(3)
-        for i, stock in enumerate(fo_stocks['bearish'][:9]):
-            with bearish_cols[i % 3]:
-                st.markdown(f"""
-                <div class="bearish-stock">
-                    <div>
-                        <strong>{stock['symbol']}</strong><br>
-                        <small>LTP: {stock['ltp']:.2f}</small>
-                    </div>
-                    <div>
-                        <strong>{stock['change']:.2f}%</strong><br>
-                        <small>OI: {stock['oi']:,.0f}</small>
-                    </div>
-                </div>
-                """, unsafe_allow_html=True)
+    with tabs[4]:
+        display_stock_analysis_table(stock_data, 'bullish_stocks', "📈 All Bullish Stocks", "bullish-signal")
     
-    # Trading Actions Section
-    st.header("🎯 Recommended Trading Actions")
+    with tabs[5]:
+        display_stock_analysis_table(stock_data, 'bearish_stocks', "📉 All Bearish Stocks", "wait-signal")
     
-    if fo_stocks['trading_actions']:
-        for action in fo_stocks['trading_actions']:
-            if action['action'] == 'LONG':
-                st.markdown(f"""
-                <div class="action-card long-action">
-                    <strong>LONG {action['symbol']}</strong><br>
-                    LTP: {action['ltp']:.2f} | Target: {action['target']:.2f} | SL: {action['stop_loss']:.2f}<br>
-                    <small>{action['reason']}</small><br>
-                    <small>Confidence: {action['confidence']}</small>
-                </div>
-                """, unsafe_allow_html=True)
-            else:
-                st.markdown(f"""
-                <div class="action-card short-action">
-                    <strong>SHORT {action['symbol']}</strong><br>
-                    LTP: {action['ltp']:.2f} | Target: {action['target']:.2f} | SL: {action['stop_loss']:.2f}<br>
-                    <small>{action['reason']}</small><br>
-                    <small>Confidence: {action['confidence']}</small>
-                </div>
-                """, unsafe_allow_html=True)
-    
-    # Options Unwinding Section
-    st.header("🔄 Options Unwinding Analysis")
-    
-    if unwinding_data['call_unwinding']:
-        st.subheader("📉 Call Unwinding Detected")
-        for unwind in unwinding_data['call_unwinding'][:5]:
-            st.markdown(f"""
-            <div class="unwinding-alert">
-                <strong>Strike {unwind['strike']:.0f}</strong><br>
-                OI Change: {unwind['oi_change']:,} | Price: {unwind['price']:.2f}<br>
-                <small>Sheet: {unwind['sheet']}</small>
-            </div>
-            """, unsafe_allow_html=True)
-    
-    if unwinding_data['put_unwinding']:
-        st.subheader("📈 Put Unwinding Detected")
-        for unwind in unwinding_data['put_unwinding'][:5]:
-            st.markdown(f"""
-            <div class="unwinding-alert">
-                <strong>Strike {unwind['strike']:.0f}</strong><br>
-                OI Change: {unwind['oi_change']:,} | Price: {unwind['price']:.2f}<br>
-                <small>Sheet: {unwind['sheet']}</small>
-            </div>
-            """, unsafe_allow_html=True)
-    
-    if unwinding_data['fresh_positions']:
-        st.subheader("🆕 Fresh OI Buildup")
-        for position in unwinding_data['fresh_positions'][:5]:
-            st.markdown(f"""
-            <div class="buildup-alert">
-                <strong>{position['type']} Strike {position['strike']:.0f}</strong><br>
-                OI Change: +{position['oi_change']:,}<br>
-                <small>Sheet: {position['sheet']}</small>
-            </div>
-            """, unsafe_allow_html=True)
+    # Data source info
+    st.markdown("---")
+    st.markdown(f"""
+    **Data Source:** {len(data_dict)} Excel sheets processed  
+    **Last Updated:** {datetime.now().strftime("%H:%M:%S")}  
+    **Total Stocks Analyzed:** {len(stock_data['all_stocks'])}  
+    **Auto-refresh:** Every 30 seconds
+    """)
 
 # Main execution
 def main():
-    # File upload section
-    st.sidebar.title("📁 Data Source")
+    # Sidebar controls
+    st.sidebar.title("📊 Dashboard Controls")
+    
+    # File upload
     uploaded_file = st.sidebar.file_uploader("Upload F&O Excel File", type=["xlsx", "xls"])
     
+    # Refresh controls
+    auto_refresh = st.sidebar.checkbox("Auto Refresh (30s)", value=True)
+    
+    if st.sidebar.button("🔄 Manual Refresh"):
+        st.experimental_rerun()
+    
+    # Display current time
+    st.sidebar.markdown(f"**Current Time:** {datetime.now().strftime('%H:%M:%S')}")
+    
     if uploaded_file is not None:
-        # Save uploaded file to a temporary location
-        with open("temp_file.xlsx", "wb") as f:
+        # Save uploaded file
+        with open("temp_fo_file.xlsx", "wb") as f:
             f.write(uploaded_file.getvalue())
         
         # Read and process data
-        data_dict = read_comprehensive_data("temp_file.xlsx")
+        with st.spinner("Loading F&O data..."):
+            data_dict = read_comprehensive_data("temp_fo_file.xlsx")
         
         if data_dict:
             # Display dashboard
             display_live_dashboard(data_dict)
             
-            # Auto-refresh every 30 seconds
-            st_autorefresh(interval=30 * 1000, key="data_refresh")
+            # Auto-refresh functionality
+            if auto_refresh:
+                try:
+                    from streamlit_autorefresh import st_autorefresh
+                    st_autorefresh(interval=30 * 1000, key="fo_data_refresh")
+                except ImportError:
+                    st.sidebar.warning("Install streamlit-autorefresh for auto-refresh: `pip install streamlit-autorefresh`")
         else:
-            st.error("Could not read data from the uploaded file. Please check the file format.")
+            st.error("❌ Could not read data from the uploaded file. Please check the file format.")
     else:
-        st.info("Please upload an Excel file with F&O data to view the dashboard.")
-
-# Import st_autorefresh
-try:
-    from streamlit_autorefresh import st_autorefresh
-except ImportError:
-    st_autorefresh = None
-    st.warning("Auto-refresh not available. Install with: pip install streamlit-autorefresh")
+        st.info("📁 Please upload an Excel file with F&O data to view the complete dashboard.")
+        
+        # Show sample data structure expected
+        st.markdown("""
+        ### Expected Excel Data Structure:
+        - **Stock Name/Symbol** column
+        - **Change %** column
+        - **Price/LTP** column  
+        - **OI (Open Interest)** column
+        - **Volume** column
+        - **Buildup** column (longBuildup, shortCover, etc.)
+        - **Sentiment** column
+        """)
 
 if __name__ == "__main__":
     main()
