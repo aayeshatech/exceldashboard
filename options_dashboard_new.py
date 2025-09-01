@@ -122,7 +122,7 @@ def read_excel_data(file_path):
         return {}
 
 def extract_stock_data(data_dict):
-    """Extract and categorize stock data"""
+    """Extract and categorize stock data - Fixed to match your exact Excel format"""
     categories = {
         'long_buildup': [],
         'short_covering': [],
@@ -132,55 +132,65 @@ def extract_stock_data(data_dict):
         'bearish_stocks': []
     }
     
+    # Debug: Print all sheet names to understand the structure
+    print("Available sheets:", list(data_dict.keys()))
+    
     for sheet_name, df in data_dict.items():
-        # Look for stock data sheets
-        if any(term in sheet_name.upper() for term in ['STOCK', 'BULLISH', 'BEARISH', 'NIFTY']):
+        print(f"Processing sheet: {sheet_name}")
+        print(f"Columns in sheet: {list(df.columns)}")
+        
+        # Look specifically for sheets like "Nifty 50 Bullish Stock"
+        if any(term in sheet_name for term in ['Bullish Stock', 'Bearish Stock', 'Stock Dashboard', 'NIFTY']):
             
-            # Find columns by checking actual column names
-            symbol_col = None
-            change_col = None
-            price_col = None
-            oi_col = None
-            volume_col = None
-            buildup_col = None
-            sentiment_col = None
+            # Map exact column names from your Excel
+            column_mapping = {}
             
             for col in df.columns:
-                col_upper = str(col).upper()
-                if 'STOCK' in col_upper and 'NAME' in col_upper:
-                    symbol_col = col
-                elif 'CHANGE' in col_upper and '%' in col_upper:
-                    change_col = col
-                elif col_upper == 'PRICE':
-                    price_col = col
-                elif col_upper == 'OI':
-                    oi_col = col
-                elif col_upper == 'VOLUME':
-                    volume_col = col
-                elif 'BUILDUP' in col_upper:
-                    buildup_col = col
-                elif 'SENTIMENT' in col_upper:
-                    sentiment_col = col
+                col_str = str(col).strip()
+                if col_str == 'STOCK NAME':
+                    column_mapping['symbol'] = col
+                elif col_str == 'CHANGE %':
+                    column_mapping['change'] = col
+                elif col_str == 'PRICE':
+                    column_mapping['price'] = col
+                elif col_str == 'OI':
+                    column_mapping['oi'] = col
+                elif col_str == 'Volume':
+                    column_mapping['volume'] = col
+                elif col_str == 'Buildup':
+                    column_mapping['buildup'] = col
+                elif col_str == 'SENTIMENT':
+                    column_mapping['sentiment'] = col
             
-            # Process rows if we found key columns
-            if symbol_col and change_col:
-                for _, row in df.iterrows():
+            print(f"Column mapping for {sheet_name}: {column_mapping}")
+            
+            # Process rows if we have the required columns
+            if 'symbol' in column_mapping and 'change' in column_mapping:
+                print(f"Processing {len(df)} rows in {sheet_name}")
+                
+                for index, row in df.iterrows():
                     try:
-                        symbol = str(row[symbol_col]) if pd.notna(row[symbol_col]) else ''
-                        if not symbol or symbol == 'nan':
+                        # Extract symbol
+                        symbol = str(row[column_mapping['symbol']]) if pd.notna(row[column_mapping['symbol']]) else ''
+                        if not symbol or symbol == 'nan' or symbol == '':
                             continue
                             
-                        # Clean symbol name
-                        if 'NSE:' in symbol:
-                            symbol = symbol.replace('NSE:', '')
+                        # Clean symbol name - remove NSE: prefix
+                        if symbol.startswith('NSE:'):
+                            symbol = symbol[4:]  # Remove 'NSE:' prefix
                         
-                        # Get values
-                        change = float(row[change_col]) if pd.notna(row[change_col]) else 0
-                        price = float(row[price_col]) if price_col and pd.notna(row[price_col]) else 0
-                        oi = float(row[oi_col]) if oi_col and pd.notna(row[oi_col]) else 0
-                        volume = float(row[volume_col]) if volume_col and pd.notna(row[volume_col]) else 0
-                        buildup = str(row[buildup_col]) if buildup_col and pd.notna(row[buildup_col]) else ''
-                        sentiment = str(row[sentiment_col]) if sentiment_col and pd.notna(row[sentiment_col]) else ''
+                        # Get change percentage
+                        try:
+                            change = float(row[column_mapping['change']]) if pd.notna(row[column_mapping['change']]) else 0
+                        except:
+                            change = 0
+                        
+                        # Get other values
+                        price = float(row[column_mapping['price']]) if 'price' in column_mapping and pd.notna(row[column_mapping['price']]) else 0
+                        oi = float(row[column_mapping['oi']]) if 'oi' in column_mapping and pd.notna(row[column_mapping['oi']]) else 0
+                        volume = float(row[column_mapping['volume']]) if 'volume' in column_mapping and pd.notna(row[column_mapping['volume']]) else 0
+                        buildup = str(row[column_mapping['buildup']]).strip() if 'buildup' in column_mapping and pd.notna(row[column_mapping['buildup']]) else ''
+                        sentiment = str(row[column_mapping['sentiment']]).strip() if 'sentiment' in column_mapping and pd.notna(row[column_mapping['sentiment']]) else ''
                         
                         stock_info = {
                             'symbol': symbol,
@@ -192,32 +202,42 @@ def extract_stock_data(data_dict):
                             'sentiment': sentiment
                         }
                         
-                        # Categorize by buildup
-                        buildup_lower = buildup.lower()
-                        if 'longbuildup' in buildup_lower:
-                            categories['long_buildup'].append(stock_info)
-                        elif 'shortcover' in buildup_lower:
-                            categories['short_covering'].append(stock_info)
-                        elif 'shortbuildup' in buildup_lower:
-                            categories['short_buildup'].append(stock_info)
-                        elif 'longunwind' in buildup_lower:
-                            categories['long_unwinding'].append(stock_info)
+                        print(f"Processing stock: {symbol}, Change: {change}, Buildup: {buildup}")
                         
-                        # Categorize by performance
-                        if change > 0.5:
+                        # Categorize by buildup type (exact match from your data)
+                        if buildup == 'longBuildup':
+                            categories['long_buildup'].append(stock_info)
+                            print(f"Added {symbol} to long_buildup")
+                        elif buildup == 'shortCover':
+                            categories['short_covering'].append(stock_info)
+                            print(f"Added {symbol} to short_covering")
+                        elif buildup == 'shortBuildup':
+                            categories['short_buildup'].append(stock_info)
+                            print(f"Added {symbol} to short_buildup")
+                        elif buildup == 'longUnwind':
+                            categories['long_unwinding'].append(stock_info)
+                            print(f"Added {symbol} to long_unwinding")
+                        
+                        # Also categorize by performance
+                        if change > 0.3:  # Lower threshold to catch more bullish stocks
                             categories['bullish_stocks'].append(stock_info)
-                        elif change < -0.5:
+                        elif change < -0.3:  # Lower threshold to catch more bearish stocks
                             categories['bearish_stocks'].append(stock_info)
                             
-                    except:
+                    except Exception as e:
+                        print(f"Error processing row {index}: {e}")
                         continue
+    
+    # Print final counts
+    for category, stocks in categories.items():
+        print(f"Found {len(stocks)} stocks in {category}")
     
     # Sort categories
     for category in categories:
         if category == 'bearish_stocks':
-            categories[category] = sorted(categories[category], key=lambda x: x['change'])[:30]
+            categories[category] = sorted(categories[category], key=lambda x: x['change'])[:50]
         else:
-            categories[category] = sorted(categories[category], key=lambda x: x['change'], reverse=True)[:30]
+            categories[category] = sorted(categories[category], key=lambda x: x['change'], reverse=True)[:50]
     
     return categories
 
@@ -282,6 +302,16 @@ def display_dashboard(data_dict):
     </div>
     """, unsafe_allow_html=True)
     
+    # Debug mode toggle
+    debug_mode = st.checkbox("🔍 Debug Mode - Show Processing Details", value=False)
+    
+    if debug_mode:
+        st.subheader("📋 Available Sheets")
+        for sheet_name, df in data_dict.items():
+            with st.expander(f"Sheet: {sheet_name} ({len(df)} rows)"):
+                st.write("**Columns:**", list(df.columns))
+                st.dataframe(df.head(3))
+    
     # Extract data
     stock_categories = extract_stock_data(data_dict)
     sector_data = extract_sector_data(data_dict)
@@ -324,6 +354,15 @@ def display_dashboard(data_dict):
             </div>
             """, unsafe_allow_html=True)
     
+    # Debug: Show extraction results
+    if debug_mode:
+        st.subheader("🔍 Extraction Results")
+        for category, stocks in stock_categories.items():
+            st.write(f"**{category}:** {len(stocks)} stocks")
+            if stocks:
+                sample_stock = stocks[0]
+                st.write(f"Sample: {sample_stock['symbol']} - Change: {sample_stock['change']}% - Buildup: {sample_stock['buildup']}")
+    
     # Stock analysis tabs
     st.header("🎯 Stock Analysis")
     
@@ -355,6 +394,12 @@ def display_dashboard(data_dict):
     **Last Updated:** {datetime.now().strftime("%H:%M:%S")}  
     **Total Stocks Analyzed:** {total_stocks}
     """)
+    
+    # Sheet summary
+    if debug_mode:
+        with st.expander("📄 All Sheet Names"):
+            for sheet_name in data_dict.keys():
+                st.write(f"• {sheet_name}")
 
 def main():
     st.sidebar.title("📊 F&O Dashboard")
