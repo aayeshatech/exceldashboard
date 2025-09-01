@@ -284,33 +284,61 @@ def read_comprehensive_data(file_path):
         return {}
 
 def extract_sector_performance(data_dict):
-    """Extract sector-wise performance data"""
+    """Extract sector-wise performance data - Fixed for your Excel format"""
     sector_data = {}
     
     for sheet_name, df in data_dict.items():
-        if 'SECTOR' in sheet_name.upper() or 'Dashboard' in sheet_name:
-            # Look for sector performance data
-            for _, row in df.iterrows():
-                try:
-                    sector_name = str(row.iloc[0]).strip()
-                    if any(sector in sector_name.upper() for sector in ['NIFTY', 'BANK', 'IT', 'PHARMA', 'METAL', 'AUTO', 'ENERGY', 'FMCG']):
-                        # Extract bullish/bearish percentages
-                        for col in df.columns:
-                            if 'BULLISH' in str(col).upper():
-                                bullish_val = pd.to_numeric(row[col], errors='coerce')
-                                if not pd.isna(bullish_val):
-                                    sector_data[sector_name] = {
-                                        'bullish': bullish_val,
-                                        'bearish': 100 - bullish_val if bullish_val <= 100 else 0
-                                    }
-                                break
-                except:
-                    continue
+        # Look for sector or dashboard sheets
+        if 'SECTOR' in sheet_name.upper() or 'Dashboard' in sheet_name or 'ALL SECTOR' in sheet_name.upper():
+            try:
+                # Based on your Excel image, look for sector performance data
+                for _, row in df.iterrows():
+                    try:
+                        # Try to find sector names and their performance
+                        first_col = str(row.iloc[0]).strip() if pd.notna(row.iloc[0]) else ''
+                        
+                        # Check if this looks like a sector name
+                        sector_keywords = ['NIFTY', 'BANK', 'IT', 'PHARMA', 'METAL', 'AUTO', 'ENERGY', 'FMCG', 'SENSEX', 'MIDCAP', 'HEALTHCARE', 'REALTY', 'CONSUMER', 'SERVICE']
+                        
+                        if any(keyword in first_col.upper() for keyword in sector_keywords):
+                            # Look for bullish/bearish percentages in the row
+                            bullish_val = None
+                            bearish_val = None
+                            
+                            for col_val in row:
+                                try:
+                                    val_str = str(col_val).strip()
+                                    # Look for percentage values
+                                    if '%' in val_str:
+                                        val = float(val_str.replace('%', ''))
+                                        if 0 <= val <= 100:
+                                            if bullish_val is None:
+                                                bullish_val = val
+                                            elif bearish_val is None:
+                                                bearish_val = val
+                                                break
+                                except:
+                                    continue
+                            
+                            # If we found valid percentages, add to sector data
+                            if bullish_val is not None:
+                                if bearish_val is None:
+                                    bearish_val = 100 - bullish_val
+                                
+                                sector_data[first_col] = {
+                                    'bullish': bullish_val,
+                                    'bearish': bearish_val
+                                }
+                    except:
+                        continue
+                        
+            except:
+                continue
     
     return sector_data
 
 def extract_complete_stock_data(data_dict):
-    """Extract complete stock data with all buildup types"""
+    """Extract complete stock data with all buildup types - Fixed for your Excel format"""
     stock_data = {
         'long_buildup': [],
         'short_covering': [],
@@ -322,78 +350,107 @@ def extract_complete_stock_data(data_dict):
     }
     
     for sheet_name, df in data_dict.items():
-        if any(term in sheet_name.upper() for term in ['STOCK', 'NIFTY 50', 'DASHBOARD']):
+        # Look for sheets that contain stock data
+        if any(term in sheet_name.upper() for term in ['STOCK', 'NIFTY 50', 'DASHBOARD', 'BULLISH']):
             try:
-                # Find relevant columns
-                symbol_col = find_column_by_keywords(df.columns, ['STOCK NAME', 'SYMBOL', 'NAME'])
-                change_col = find_column_by_keywords(df.columns, ['CHANGE %', '%', 'CHG'])
-                price_col = find_column_by_keywords(df.columns, ['PRICE', 'LTP', 'CLOSE'])
-                oi_col = find_column_by_keywords(df.columns, ['OI', 'OPEN INT'])
-                oi_change_col = find_column_by_keywords(df.columns, ['Change in OI', 'OI CHG'])
-                volume_col = find_column_by_keywords(df.columns, ['Volume', 'VOL'])
-                buildup_col = find_column_by_keywords(df.columns, ['Buildup', 'BUILDUP', 'TREND'])
-                sentiment_col = find_column_by_keywords(df.columns, ['SENTIMENT', 'SIGNAL'])
+                # Based on your Excel image, try to find columns
+                symbol_col = None
+                change_col = None
+                price_col = None
+                oi_col = None
+                oi_change_col = None
+                volume_col = None
+                buildup_col = None
+                sentiment_col = None
                 
-                if not symbol_col:
-                    continue
-                
-                # Process each stock
-                for _, row in df.iterrows():
-                    try:
-                        symbol = str(row[symbol_col]).strip()
-                        if symbol == 'nan' or symbol == '' or 'NSE:' not in symbol:
-                            continue
-                        
-                        # Clean symbol name
-                        symbol = symbol.replace('NSE:', '')
-                        
-                        # Extract all data
-                        change = pd.to_numeric(row[change_col], errors='coerce') if change_col else 0
-                        price = pd.to_numeric(row[price_col], errors='coerce') if price_col else 0
-                        oi = pd.to_numeric(row[oi_col], errors='coerce') if oi_col else 0
-                        oi_change = pd.to_numeric(row[oi_change_col], errors='coerce') if oi_change_col else 0
-                        volume = pd.to_numeric(row[volume_col], errors='coerce') if volume_col else 0
-                        buildup = str(row[buildup_col]).strip() if buildup_col else 'Unknown'
-                        sentiment = str(row[sentiment_col]).strip() if sentiment_col else 'Wait For Signal'
-                        
-                        if pd.isna(change):
-                            continue
-                        
-                        stock_info = {
-                            'symbol': symbol,
-                            'change': change,
-                            'price': price,
-                            'oi': oi,
-                            'oi_change': oi_change,
-                            'volume': volume,
-                            'buildup': buildup,
-                            'sentiment': sentiment
-                        }
-                        
-                        # Add to all stocks
-                        stock_data['all_stocks'].append(stock_info)
-                        
-                        # Categorize by buildup type
-                        if 'longBuildup' in buildup or 'Long Buildup' in buildup:
-                            stock_data['long_buildup'].append(stock_info)
-                        elif 'shortCover' in buildup or 'Short Cover' in buildup:
-                            stock_data['short_covering'].append(stock_info)
-                        elif 'shortBuildup' in buildup or 'Short Buildup' in buildup:
-                            stock_data['short_buildup'].append(stock_info)
-                        elif 'longUnwind' in buildup or 'Long Unwind' in buildup:
-                            stock_data['long_unwinding'].append(stock_info)
-                        
-                        # Categorize by performance
-                        if change > 0.5:
-                            stock_data['bullish_stocks'].append(stock_info)
-                        elif change < -0.5:
-                            stock_data['bearish_stocks'].append(stock_info)
+                # Find columns by exact or partial match
+                for col in df.columns:
+                    col_str = str(col).upper()
                     
-                    except Exception as e:
-                        continue
-            
+                    if 'STOCK NAME' in col_str or col_str == 'STOCK' or 'SYMBOL' in col_str:
+                        symbol_col = col
+                    elif 'CHANGE %' in col_str or col_str == 'CHANGE%' or col_str == '%':
+                        change_col = col
+                    elif col_str == 'PRICE' or 'LTP' in col_str:
+                        price_col = col
+                    elif col_str == 'OI' and 'CHANGE' not in col_str:
+                        oi_col = col
+                    elif 'CHANGE IN OI' in col_str or 'OI CHANGE' in col_str:
+                        oi_change_col = col
+                    elif col_str == 'VOLUME' or 'VOL' in col_str:
+                        volume_col = col
+                    elif 'BUILDUP' in col_str or 'BUILD' in col_str:
+                        buildup_col = col
+                    elif 'SENTIMENT' in col_str or 'SIGNAL' in col_str:
+                        sentiment_col = col
+                
+                # If we found basic columns, process the data
+                if symbol_col and change_col:
+                    # Process each row
+                    for _, row in df.iterrows():
+                        try:
+                            symbol = str(row[symbol_col]).strip() if pd.notna(row[symbol_col]) else ''
+                            
+                            # Skip empty or invalid symbols
+                            if not symbol or symbol == 'nan' or symbol == '':
+                                continue
+                            
+                            # Clean symbol name - remove NSE: prefix if present
+                            if 'NSE:' in symbol:
+                                symbol = symbol.replace('NSE:', '')
+                            
+                            # Get change value
+                            change_val = row[change_col] if change_col else 0
+                            try:
+                                change = float(change_val) if pd.notna(change_val) else 0
+                            except (ValueError, TypeError):
+                                change = 0
+                            
+                            # Get other values
+                            price = float(row[price_col]) if price_col and pd.notna(row[price_col]) else 0
+                            oi = float(row[oi_col]) if oi_col and pd.notna(row[oi_col]) else 0
+                            oi_change = float(row[oi_change_col]) if oi_change_col and pd.notna(row[oi_change_col]) else 0
+                            volume = float(row[volume_col]) if volume_col and pd.notna(row[volume_col]) else 0
+                            buildup = str(row[buildup_col]).strip() if buildup_col and pd.notna(row[buildup_col]) else 'Unknown'
+                            sentiment = str(row[sentiment_col]).strip() if sentiment_col and pd.notna(row[sentiment_col]) else 'Wait For Signal'
+                            
+                            stock_info = {
+                                'symbol': symbol,
+                                'change': change,
+                                'price': price,
+                                'oi': oi,
+                                'oi_change': oi_change,
+                                'volume': volume,
+                                'buildup': buildup,
+                                'sentiment': sentiment
+                            }
+                            
+                            # Add to all stocks
+                            stock_data['all_stocks'].append(stock_info)
+                            
+                            # Categorize by buildup type (case insensitive)
+                            buildup_lower = buildup.lower()
+                            if 'longbuildup' in buildup_lower or 'long buildup' in buildup_lower:
+                                stock_data['long_buildup'].append(stock_info)
+                            elif 'shortcover' in buildup_lower or 'short cover' in buildup_lower:
+                                stock_data['short_covering'].append(stock_info)
+                            elif 'shortbuildup' in buildup_lower or 'short buildup' in buildup_lower:
+                                stock_data['short_buildup'].append(stock_info)
+                            elif 'longunwind' in buildup_lower or 'long unwind' in buildup_lower:
+                                stock_data['long_unwinding'].append(stock_info)
+                            
+                            # Categorize by performance
+                            if change > 0.5:
+                                stock_data['bullish_stocks'].append(stock_info)
+                            elif change < -0.5:
+                                stock_data['bearish_stocks'].append(stock_info)
+                        
+                        except Exception as e:
+                            # Skip problematic rows
+                            continue
+                            
             except Exception as e:
-                st.write(f"Error processing sheet {sheet_name}: {str(e)}")
+                # Skip problematic sheets
                 continue
     
     # Sort all categories
