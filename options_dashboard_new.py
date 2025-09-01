@@ -75,6 +75,10 @@ st.markdown("""
     50% { opacity: 0.5; }
     100% { opacity: 1; }
 }
+.dataframe-container {
+    max-height: 500px;
+    overflow-y: auto;
+}
 </style>
 """, unsafe_allow_html=True)
 
@@ -113,9 +117,6 @@ def read_excel_data(file_path):
 def extract_sector_data(data_dict):
     """Extract sector performance data specifically from columns X and Z in Sector Dashboard sheet"""
     sectors = {}
-    
-    # Debug: Print all sheet names
-    st.sidebar.write("Available sheets:", list(data_dict.keys()))
     
     # Look for a sheet that contains both 'SECTOR' and 'DASHBOARD' (case-insensitive)
     target_sheet = None
@@ -200,9 +201,6 @@ def extract_stock_data(data_dict):
         'bullish_stocks': [],
         'bearish_stocks': []
     }
-    
-    # Debug: Print all sheet names
-    st.sidebar.write("Available sheets for stocks:", list(data_dict.keys()))
     
     # Look for a sheet that contains 'NIFTY' and 'BULLISH' and 'STOCK' (case-insensitive)
     target_sheet = None
@@ -338,7 +336,7 @@ def display_stock_cards(stocks, title, card_class):
                 </div>
                 """, unsafe_allow_html=True)
 
-def display_dashboard(data_dict):
+def display_dashboard(data_dict, selected_sheet=None):
     """Display the main dashboard"""
     
     # Header
@@ -350,11 +348,29 @@ def display_dashboard(data_dict):
     </div>
     """, unsafe_allow_html=True)
     
-    # Extract data
-    sector_data = extract_sector_data(data_dict)
-    stock_categories = extract_stock_data(data_dict)
+    # If a specific sheet is selected, display it
+    if selected_sheet and selected_sheet in data_dict:
+        st.header(f"📄 Sheet: {selected_sheet}")
+        df = data_dict[selected_sheet]
+        
+        # Display sheet info
+        st.write(f"**Rows:** {len(df)}, **Columns:** {len(df.columns)}")
+        
+        # Display column names
+        with st.expander("View Column Names"):
+            st.write(list(df.columns))
+        
+        # Display dataframe with scrollable container
+        st.markdown('<div class="dataframe-container">', unsafe_allow_html=True)
+        st.dataframe(df)
+        st.markdown('</div>', unsafe_allow_html=True)
+        
+        # Add a separator
+        st.markdown("---")
     
-    # Display sector performance
+    # Extract and display sector data
+    sector_data = extract_sector_data(data_dict)
+    
     if sector_data:
         st.header("📊 Sector Performance")
         cols = st.columns(min(4, len(sector_data)))
@@ -371,6 +387,9 @@ def display_dashboard(data_dict):
                     """, unsafe_allow_html=True)
     else:
         st.warning("No sector data found. Please check if your Excel has a 'Sector Dashboard' sheet with data in columns X and Z.")
+    
+    # Extract and display stock data
+    stock_categories = extract_stock_data(data_dict)
     
     # Display summary metrics
     st.header("📈 Market Summary")
@@ -465,7 +484,16 @@ def main():
             pass
         
         if data_dict:
-            display_dashboard(data_dict)
+            # Sheet selector
+            sheet_names = list(data_dict.keys())
+            selected_sheet = st.sidebar.selectbox(
+                "Select a sheet to view:",
+                ["None"] + sheet_names,
+                index=0
+            )
+            
+            # Display dashboard
+            display_dashboard(data_dict, selected_sheet if selected_sheet != "None" else None)
             
             # Auto-refresh
             if auto_refresh:
