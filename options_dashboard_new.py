@@ -132,13 +132,7 @@ def extract_stock_data(data_dict):
         'bearish_stocks': []
     }
     
-    # Debug: Print all sheet names to understand the structure
-    print("Available sheets:", list(data_dict.keys()))
-    
     for sheet_name, df in data_dict.items():
-        print(f"Processing sheet: {sheet_name}")
-        print(f"Columns in sheet: {list(df.columns)}")
-        
         # Look specifically for sheets like "Nifty 50 Bullish Stock"
         if any(term in sheet_name for term in ['Bullish Stock', 'Bearish Stock', 'Stock Dashboard', 'NIFTY']):
             
@@ -147,27 +141,23 @@ def extract_stock_data(data_dict):
             
             for col in df.columns:
                 col_str = str(col).strip()
-                if col_str == 'STOCK NAME':
+                if 'STOCK NAME' in col_str:
                     column_mapping['symbol'] = col
-                elif col_str == 'CHANGE %':
+                elif 'CHANGE' in col_str and '%' in col_str:
                     column_mapping['change'] = col
-                elif col_str == 'PRICE':
+                elif 'PRICE' in col_str:
                     column_mapping['price'] = col
-                elif col_str == 'OI':
+                elif 'OI' in col_str and 'Change' not in col_str:
                     column_mapping['oi'] = col
-                elif col_str == 'Volume':
+                elif 'Volume' in col_str and 'Fut' not in col_str:
                     column_mapping['volume'] = col
-                elif col_str == 'Buildup':
+                elif 'Building' in col_str or 'Buildup' in col_str:
                     column_mapping['buildup'] = col
-                elif col_str == 'SENTIMENT':
+                elif 'SENTIMENT' in col_str:
                     column_mapping['sentiment'] = col
-            
-            print(f"Column mapping for {sheet_name}: {column_mapping}")
             
             # Process rows if we have the required columns
             if 'symbol' in column_mapping and 'change' in column_mapping:
-                print(f"Processing {len(df)} rows in {sheet_name}")
-                
                 for index, row in df.iterrows():
                     try:
                         # Extract symbol
@@ -175,9 +165,9 @@ def extract_stock_data(data_dict):
                         if not symbol or symbol == 'nan' or symbol == '':
                             continue
                             
-                        # Clean symbol name - remove NSE: prefix
-                        if symbol.startswith('NSE:'):
-                            symbol = symbol[4:]  # Remove 'NSE:' prefix
+                        # Clean symbol name - remove NSE= prefix (your data uses = instead of :)
+                        if symbol.startswith('NSE='):
+                            symbol = symbol[4:]  # Remove 'NSE=' prefix
                         
                         # Get change percentage
                         try:
@@ -202,35 +192,24 @@ def extract_stock_data(data_dict):
                             'sentiment': sentiment
                         }
                         
-                        print(f"Processing stock: {symbol}, Change: {change}, Buildup: {buildup}")
-                        
                         # Categorize by buildup type (exact match from your data)
-                        if buildup == 'longBuildup':
+                        if buildup == 'LongBuilding':
                             categories['long_buildup'].append(stock_info)
-                            print(f"Added {symbol} to long_buildup")
-                        elif buildup == 'shortCover':
+                        elif buildup == 'Shortcover':
                             categories['short_covering'].append(stock_info)
-                            print(f"Added {symbol} to short_covering")
-                        elif buildup == 'shortBuildup':
+                        elif buildup == 'ShortBuildup':
                             categories['short_buildup'].append(stock_info)
-                            print(f"Added {symbol} to short_buildup")
-                        elif buildup == 'longUnwind':
+                        elif buildup == 'LongUnwinding':
                             categories['long_unwinding'].append(stock_info)
-                            print(f"Added {symbol} to long_unwinding")
                         
                         # Also categorize by performance
-                        if change > 0.3:  # Lower threshold to catch more bullish stocks
+                        if change > 0.3:
                             categories['bullish_stocks'].append(stock_info)
-                        elif change < -0.3:  # Lower threshold to catch more bearish stocks
+                        elif change < -0.3:
                             categories['bearish_stocks'].append(stock_info)
                             
                     except Exception as e:
-                        print(f"Error processing row {index}: {e}")
                         continue
-    
-    # Print final counts
-    for category, stocks in categories.items():
-        print(f"Found {len(stocks)} stocks in {category}")
     
     # Sort categories
     for category in categories:
@@ -242,23 +221,47 @@ def extract_stock_data(data_dict):
     return categories
 
 def extract_sector_data(data_dict):
-    """Extract sector performance data"""
+    """Extract sector performance data from your specific format"""
     sectors = {}
     
     for sheet_name, df in data_dict.items():
         if 'SECTOR' in sheet_name.upper() or 'Dashboard' in sheet_name:
             for _, row in df.iterrows():
                 try:
-                    first_val = str(row.iloc[0])
-                    if any(keyword in first_val.upper() for keyword in ['NIFTY', 'BANK', 'IT', 'AUTO', 'PHARMA']):
+                    # Look for rows with sector names
+                    first_val = str(row.iloc[0]) if len(row) > 0 else ""
+                    
+                    if any(keyword in first_val.upper() for keyword in ['NIFTY', 'BANK', 'IT', 'AUTO', 'PHARMA', 'FIN']):
                         # Look for percentage values in the row
-                        for val in row:
+                        bullish_val = None
+                        bearish_val = None
+                        
+                        for i, val in enumerate(row):
                             try:
-                                if isinstance(val, (int, float)) and 0 <= val <= 100:
-                                    sectors[first_val] = {'bullish': val, 'bearish': 100-val}
-                                    break
+                                # Check if value is a percentage string like "0.0%"
+                                if isinstance(val, str) and '%' in val:
+                                    num_val = float(val.replace('%', '').strip())
+                                    if 0 <= num_val <= 100:
+                                        if bullish_val is None:
+                                            bullish_val = num_val
+                                        else:
+                                            bearish_val = num_val
+                                            break
+                                # Check if value is a numeric percentage
+                                elif isinstance(val, (int, float)) and 0 <= val <= 100:
+                                    if bullish_val is None:
+                                        bullish_val = val
+                                    else:
+                                        bearish_val = val
+                                        break
                             except:
                                 continue
+                        
+                        if bullish_val is not None:
+                            sectors[first_val] = {
+                                'bullish': bullish_val, 
+                                'bearish': bearish_val if bearish_val is not None else 100 - bullish_val
+                            }
                 except:
                     continue
     
@@ -458,12 +461,12 @@ def main():
         if st.sidebar.checkbox("🎯 Load Sample Data"):
             sample_data = {
                 'Sample Sheet': pd.DataFrame({
-                    'STOCK NAME': ['NSE:RELIANCE', 'NSE:TCS', 'NSE:INFY', 'NSE:HDFC'],
+                    'STOCK NAME': ['NSE=RELIANCE', 'NSE=TCS', 'NSE=INFY', 'NSE=HDFC'],
                     'CHANGE %': [2.45, 1.87, -1.25, 0.95],
                     'PRICE': [2850, 3650, 1750, 1650],
                     'OI': [145000, 125000, 180000, 95000],
-                    'VOLUME': [85000, 65000, 95000, 75000],
-                    'Buildup': ['longBuildup', 'longBuildup', 'shortBuildup', 'shortCover'],
+                    'Volume': [85000, 65000, 95000, 75000],
+                    'Building': ['LongBuilding', 'LongBuilding', 'Shortcover', 'Shortcover'],
                     'SENTIMENT': ['Bullish', 'Bullish', 'Wait For Signal', 'Bullish']
                 })
             }
