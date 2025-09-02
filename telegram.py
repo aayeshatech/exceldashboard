@@ -355,7 +355,7 @@ Timestamp: {datetime.now().strftime("%d/%m/%Y, %I:%M:%S %p")}"""
         # Auto-refresh toggle
         auto_refresh = st.checkbox("Auto-refresh every 30 seconds")
         if auto_refresh:
-            time.sleep(30)
+            time.sleep(300)
             st.rerun()
     
     # Logs section
