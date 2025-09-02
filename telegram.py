@@ -121,14 +121,14 @@ class TelegramMonitor:
         try:
             self.log_message(f"📊 Analyzing data: {len(df)} rows, {len(df.columns)} columns")
             
-            # Check if we have enough columns
-            if len(df.columns) < 26:
-                self.log_message(f"⚠️ Warning: Expected at least 26 columns, found {len(df.columns)}")
+            # Check if we have enough columns (X=24, Z=26 in 0-indexed)
+            if len(df.columns) < 27:
+                self.log_message(f"⚠️ Warning: Expected at least 27 columns for X and Z, found {len(df.columns)}")
             
             # Convert all data to string for searching
             df_str = df.astype(str)
             
-            # Look for NSE symbols and check corresponding data in columns 23 and 25
+            # Look for NSE symbols and check corresponding data in columns X(24) and Z(26)
             for row_idx in range(len(df)):
                 for col_idx in range(len(df.columns)):
                     try:
@@ -137,17 +137,17 @@ class TelegramMonitor:
                         if 'NSE:' in value:
                             symbol = value.replace('NSE:', '').strip()
                             
-                            # Get data from columns 23 and 25 (0-indexed: 22 and 24)
-                            col23_data = None
-                            col25_data = None
+                            # Get data from columns X(24) and Z(26) - 0-indexed: 23 and 25
+                            colX_data = None
+                            colZ_data = None
                             
-                            if len(df.columns) > 22:
-                                col23_data = str(df.iloc[row_idx, 22]) if not pd.isna(df.iloc[row_idx, 22]) else None
-                            if len(df.columns) > 24:
-                                col25_data = str(df.iloc[row_idx, 24]) if not pd.isna(df.iloc[row_idx, 24]) else None
+                            if len(df.columns) > 23:
+                                colX_data = str(df.iloc[row_idx, 23]) if not pd.isna(df.iloc[row_idx, 23]) else None
+                            if len(df.columns) > 25:
+                                colZ_data = str(df.iloc[row_idx, 25]) if not pd.isna(df.iloc[row_idx, 25]) else None
                             
-                            # Determine signal type based on column 23 and 25 data
-                            signal_type = self.determine_signal_from_columns(symbol, col23_data, col25_data)
+                            # Determine signal type based on column X and Z data
+                            signal_type = self.determine_signal_from_columns(symbol, colX_data, colZ_data)
                             
                             if signal_type:
                                 signals.append({
@@ -155,10 +155,10 @@ class TelegramMonitor:
                                     'signalType': signal_type,
                                     'row': row_idx,
                                     'col': col_idx,
-                                    'col23_data': col23_data,
-                                    'col25_data': col25_data
+                                    'colX_data': colX_data,
+                                    'colZ_data': colZ_data
                                 })
-                                self.log_message(f"📈 Found signal: {symbol} - {signal_type} (Col23: {col23_data}, Col25: {col25_data})")
+                                self.log_message(f"📈 Found signal: {symbol} - {signal_type} (ColX: {colX_data}, ColZ: {colZ_data})")
                     
                     except Exception as e:
                         continue  # Skip problematic cells
