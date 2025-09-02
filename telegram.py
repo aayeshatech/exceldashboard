@@ -100,11 +100,17 @@ class TelegramMonitor:
 
 <b>Symbol:</b> {signal['symbol']}
 <b>Signal:</b> {signal['signalType']}
-<b>Time:</b> {timestamp}
+<b>Time:</b> {timestamp}"""
 
-📊 Monitor your positions accordingly!
+        # Add column data if available
+        if signal.get('col23_data') and signal['col23_data'] not in ['nan', 'None', '']:
+            message += f"\n<b>Col 23:</b> {signal['col23_data']}"
+        
+        if signal.get('col25_data') and signal['col25_data'] not in ['nan', 'None', '']:
+            message += f"\n<b>Col 25:</b> {signal['col25_data']}"
 
-<i>Auto-generated from Streamlit Excel Monitor</i>"""
+        message += f"\n\n📊 Monitor your positions accordingly!"
+        message += f"\n\n<i>Auto-generated from Streamlit Excel Monitor</i>"
         
         return message
     
@@ -115,30 +121,47 @@ class TelegramMonitor:
         try:
             self.log_message(f"📊 Analyzing data: {len(df)} rows, {len(df.columns)} columns")
             
+            # Check if we have enough columns
+            if len(df.columns) < 26:
+                self.log_message(f"⚠️ Warning: Expected at least 26 columns, found {len(df.columns)}")
+            
             # Convert all data to string for searching
             df_str = df.astype(str)
             
-            # Search through all cells for NSE: symbols
-            for col_idx, col in enumerate(df.columns):
-                for row_idx, value in enumerate(df[col]):
-                    if pd.isna(value):
-                        continue
+            # Look for NSE symbols and check corresponding data in columns 23 and 25
+            for row_idx in range(len(df)):
+                for col_idx in range(len(df.columns)):
+                    try:
+                        value = str(df.iloc[row_idx, col_idx])
+                        
+                        if 'NSE:' in value:
+                            symbol = value.replace('NSE:', '').strip()
+                            
+                            # Get data from columns 23 and 25 (0-indexed: 22 and 24)
+                            col23_data = None
+                            col25_data = None
+                            
+                            if len(df.columns) > 22:
+                                col23_data = str(df.iloc[row_idx, 22]) if not pd.isna(df.iloc[row_idx, 22]) else None
+                            if len(df.columns) > 24:
+                                col25_data = str(df.iloc[row_idx, 24]) if not pd.isna(df.iloc[row_idx, 24]) else None
+                            
+                            # Determine signal type based on column 23 and 25 data
+                            signal_type = self.determine_signal_from_columns(symbol, col23_data, col25_data)
+                            
+                            if signal_type:
+                                signals.append({
+                                    'symbol': symbol,
+                                    'signalType': signal_type,
+                                    'row': row_idx,
+                                    'col': col_idx,
+                                    'col23_data': col23_data,
+                                    'col25_data': col25_data
+                                })
+                                self.log_message(f"📈 Found signal: {symbol} - {signal_type} (Col23: {col23_data}, Col25: {col25_data})")
                     
-                    value_str = str(value)
-                    if 'NSE:' in value_str:
-                        symbol = value_str.replace('NSE:', '').strip()
-                        
-                        # Analyze surrounding cells for signal type
-                        signal_type = self.determine_signal_from_context(df_str, row_idx, col_idx)
-                        
-                        if signal_type:
-                            signals.append({
-                                'symbol': symbol,
-                                'signalType': signal_type,
-                                'row': row_idx,
-                                'col': col_idx
-                            })
-                            self.log_message(f"📈 Found signal: {symbol} - {signal_type}")
+                    except Exception as e:
+                        continue  # Skip problematic cells
             
             return signals
             
@@ -146,28 +169,64 @@ class TelegramMonitor:
             self.log_message(f"❌ Error analyzing data: {str(e)}")
             return []
     
-    def determine_signal_from_context(self, df_str, row_idx, col_idx):
-        """Determine signal type from surrounding context"""
-        search_range = 5
-        
-        # Search nearby cells for signal keywords
-        for r in range(max(0, row_idx - search_range), min(len(df_str), row_idx + search_range + 1)):
-            for c in range(max(0, col_idx - search_range), min(len(df_str.columns), col_idx + search_range + 1)):
-                try:
-                    cell_value = str(df_str.iloc[r, c]).lower()
-                    
-                    if 'long' in cell_value and 'buildup' in cell_value:
-                        return 'Long Buildup'
-                    elif 'short' in cell_value and 'cover' in cell_value:
-                        return 'Short Cover'
-                    elif 'strong' in cell_value and 'bullish' in cell_value:
-                        return 'Strong Bullish'
-                    elif 'bullish' in cell_value:
-                        return 'Bullish'
-                except:
-                    continue
-        
-        return None
+    def determine_signal_from_columns(self, symbol, col23_data, col25_data):
+        """Determine signal type based on column 23 and 25 data"""
+        try:
+            # Log the column data for debugging
+            self.log_message(f"🔍 Analyzing {symbol}: Col23='{col23_data}', Col25='{col25_data}'")
+            
+            # Convert to lowercase for easier matching
+            col23_lower = str(col23_data).lower() if col23_data else ""
+            col25_lower = str(col25_data).lower() if col25_data else ""
+            
+            # Check for specific signal patterns in columns 23 and 25
+            
+            # Long Buildup patterns
+            if ('long' in col23_lower and 'buildup' in col23_lower) or \
+               ('long' in col25_lower and 'buildup' in col25_lower) or \
+               ('buildup' in col23_lower and 'long' in col25_lower):
+                return 'Long Buildup'
+            
+            # Short Cover patterns
+            if ('short' in col23_lower and 'cover' in col23_lower) or \
+               ('short' in col25_lower and 'cover' in col25_lower) or \
+               ('cover' in col23_lower and 'short' in col25_lower):
+                return 'Short Cover'
+            
+            # Strong Bullish patterns
+            if ('strong' in col23_lower and 'bullish' in col23_lower) or \
+               ('strong' in col25_lower and 'bullish' in col25_lower) or \
+               ('strong' in col23_lower and 'bullish' in col25_lower) or \
+               ('bullish' in col23_lower and 'strong' in col25_lower):
+                return 'Strong Bullish'
+            
+            # Bullish patterns
+            if 'bullish' in col23_lower or 'bullish' in col25_lower:
+                return 'Bullish'
+            
+            # Additional pattern matching - check for numeric values or specific keywords
+            # You can add more specific rules based on your Excel format
+            
+            # Check if columns contain specific trigger words
+            trigger_words_23 = ['buy', 'positive', 'up', 'green', 'call']
+            trigger_words_25 = ['signal', 'alert', 'trigger', 'action', 'recommend']
+            
+            col23_triggers = any(word in col23_lower for word in trigger_words_23)
+            col25_triggers = any(word in col25_lower for word in trigger_words_25)
+            
+            if col23_triggers and col25_triggers:
+                return 'Bullish'
+            
+            # If we have data in these columns but no specific pattern, log it for analysis
+            if col23_data and col23_data.lower() not in ['nan', 'none', ''] or \
+               col25_data and col25_data.lower() not in ['nan', 'none', '']:
+                self.log_message(f"🤔 {symbol}: Unmatched data - Col23: '{col23_data}', Col25: '{col25_data}'")
+            
+            return None
+            
+        except Exception as e:
+            self.log_message(f"❌ Error analyzing columns for {symbol}: {str(e)}")
+            return None
     
     def check_for_signals(self, df):
         """Check dataframe for trading signals"""
